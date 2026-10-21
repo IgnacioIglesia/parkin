@@ -29,15 +29,18 @@ services:
   #     RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
   #     RETENCION_MINUTOS: "10"
   #   depends_on: [db-reservas, rabbitmq]
-  #
-  # pagos:
-  #   build: ./pagos
-  #   environment:
-  #     DATABASE_URL: postgres://app:app@db-pagos:5432/pagos
-  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
-  #     REDIS_URL: redis://redis:6379
-  #     PASARELA_ACCESS_TOKEN: ${PASARELA_ACCESS_TOKEN}
-  #   depends_on: [db-pagos, rabbitmq, redis]
+
+  pagos:
+    build: ./pagos
+    environment:
+      DATABASE_URL: postgres://app:app@db-pagos:5432/pagos
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      REDIS_URL: redis://redis:6379
+      PASARELA_ACCESS_TOKEN: ${PASARELA_ACCESS_TOKEN:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    # Puerto expuesto solo para probar sin gateway; se quita cuando el gateway rutee /api/pagos
+    ports: ["8084:3000"]
+    depends_on: [db-pagos, rabbitmq, redis]
 
   db-usuarios:
     image: postgres:16

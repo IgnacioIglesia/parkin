@@ -1,0 +1,14 @@
+# Normaliza finales de línea en el repo (LF), sin importar el core.autocrlf de cada uno
+* text=auto eol=lf
+
+# Archivos que corren dentro de contenedores Linux: siempre LF
+*.sh text eol=lf
+Dockerfile text eol=lf
+
+# Binarios
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
