@@ -26,7 +26,6 @@ services:
     restart: unless-stopped
 
   cocheras:
-    profiles: ["pendiente"]
     build: ./cocheras
     environment:
       DATABASE_URL: postgres://app:app@db-cocheras:5432/cocheras
