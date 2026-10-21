@@ -1,13 +1,14 @@
-import { AlertTriangle, LockKeyhole, Search } from 'lucide-react';
+import { AlertTriangle, ArrowRight, LockKeyhole, Search } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router';
 import { buscarCocheras, usandoMocks } from '../api/cocheras.js';
 import { mensajeDeError } from '../api/errores.js';
 import { Celdas } from '../componentes/Celdas.jsx';
 import { Mapa } from '../componentes/Mapa.jsx';
 import { useBarra } from '../componentes/Shell.jsx';
+import { useReservar } from '../utilidades/useReservar.js';
 import {
-  aInputLocal,
   BARRIOS,
   barrioMasCercano,
   codigoCochera,
@@ -16,31 +17,15 @@ import {
   formatoDistancia,
   formatoHoras,
   formatoPesos,
+  franjaInicial,
   horasEntre,
+  nombreTipo,
   TIPOS_VEHICULO,
+  validarFranja,
 } from '../utilidades/formato.js';
 
 const RADIO_METROS = 1500;
 const PUNTO_PROPIO = 'punto-en-el-mapa';
-
-function franjaInicial() {
-  const desde = new Date();
-  desde.setDate(desde.getDate() + 1);
-  desde.setHours(9, 0, 0, 0);
-  const hasta = new Date(desde);
-  hasta.setHours(13);
-  return { desde: aInputLocal(desde), hasta: aInputLocal(hasta) };
-}
-
-function validar({ desde, hasta }) {
-  if (!desde) return { campo: 'desde', mensaje: 'Completá desde qué hora necesitás la cochera.' };
-  if (!hasta) return { campo: 'hasta', mensaje: 'Completá hasta qué hora necesitás la cochera.' };
-  if (new Date(hasta) <= new Date(desde))
-    return { campo: 'hasta', mensaje: 'La hora de fin tiene que ser posterior a la de inicio.' };
-  if (new Date(desde) < Date.now() - 60_000)
-    return { campo: 'desde', mensaje: 'Elegí una franja que empiece de ahora en adelante.' };
-  return null;
-}
 
 function FormBusqueda({ form, puntoPropio, invalido, onCambiar, onBuscar, buscando }) {
   return (
@@ -104,8 +89,16 @@ function FormBusqueda({ form, puntoPropio, invalido, onCambiar, onBuscar, buscan
   );
 }
 
-function Detalle({ cochera, busqueda }) {
+function Detalle({ cochera, busqueda, alConflicto }) {
   const horas = horasEntre(busqueda.desde, busqueda.hasta);
+  const { reservar, enviando, error } = useReservar();
+  const consulta = new URLSearchParams({ desde: busqueda.desde, hasta: busqueda.hasta }).toString();
+
+  // Tras un 409 la cochera ya no está libre en esa franja: el tablero avisa y se actualiza.
+  useEffect(() => {
+    if (error?.status === 409) alConflicto(cochera.codigo, error.message);
+  }, [error, alConflicto, cochera.codigo]);
+
   return (
     <section className="border-t border-[#26282c] bg-celda px-5 py-5 lg:px-6" aria-labelledby="detalle-titulo">
       <div className="flex items-start justify-between gap-4">
@@ -115,8 +108,7 @@ function Detalle({ cochera, busqueda }) {
             {cochera.titulo}
           </h2>
           <p className="mt-1 text-tenue">
-            {cochera.barrio} · a {formatoDistancia(cochera.distancia)} ·{' '}
-            {TIPOS_VEHICULO.find((t) => t.valor === cochera.tipoVehiculo)?.nombre}
+            {cochera.barrio} · a {formatoDistancia(cochera.distancia)} · {nombreTipo(cochera.tipoVehiculo)}
           </p>
         </div>
         <div className="shrink-0 text-right">
@@ -124,16 +116,29 @@ function Detalle({ cochera, busqueda }) {
           <Celdas texto={formatoPesos(cochera.precioHora * horas)} className="mt-1 text-2xl" />
         </div>
       </div>
-      <p className="mt-4 flex gap-2 text-[0.95rem] text-tenue">
+      <p className="mt-4 flex gap-2 text-base text-tenue">
         <LockKeyhole size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
         Ves una ubicación aproximada. La dirección exacta aparece cuando la reserva queda confirmada.
       </p>
-      <button type="button" className="boton boton-primario mt-4 w-full" disabled aria-describedby="reserva-pendiente">
-        Reservá esta franja
-      </button>
-      <p id="reserva-pendiente" className="mt-2 text-sm text-tenue">
-        La reserva se habilita cuando conectemos el servicio de Reservas.
-      </p>
+      {error && (
+        <p className="mt-4 bg-rojo/10 px-4 py-3" role="alert">
+          {error.status === 409 ? `${error.message}. Elegí otra cochera u otro horario.` : mensajeDeError(error)}
+        </p>
+      )}
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3">
+        <button
+          type="button"
+          className="boton boton-primario flex-1"
+          onClick={() => reservar({ cocheraId: cochera.id, desde: busqueda.desde, hasta: busqueda.hasta })}
+          disabled={enviando}
+        >
+          {enviando ? 'Reservando…' : 'Reservá esta franja'}
+        </button>
+        <Link to={`/cocheras/${cochera.id}?${consulta}`} className="inline-flex items-center gap-1.5 font-semibold text-ambar underline">
+          Ver la ficha <ArrowRight size={16} aria-hidden="true" />
+        </Link>
+      </div>
+      <p className="mt-2 text-sm text-tenue">Al reservar, la franja queda retenida 10 minutos mientras pagás.</p>
     </section>
   );
 }
@@ -154,7 +159,7 @@ export function Buscar() {
     lugar === PUNTO_PROPIO && punto ? { ...punto, nombre: 'el punto elegido' } : BARRIOS.find((b) => b.nombre === lugar);
 
   const buscar = useCallback(async (params, punto) => {
-    const problema = validar(params);
+    const problema = validarFranja(params);
     if (problema) {
       ++ultimoPedido.current; // descarta cualquier búsqueda en vuelo
       setError(problema.mensaje);
@@ -202,6 +207,15 @@ export function Buscar() {
     buscar(form, puntoPropio);
   }, []);
 
+  const [conflicto, setConflicto] = useState(null);
+  const volverABuscar = useCallback(
+    (codigo, mensaje) => {
+      setConflicto(`${codigo}: ${mensaje}. Actualizamos el tablero.`);
+      buscar(form, puntoPropio);
+    },
+    [buscar, form, puntoPropio],
+  );
+
   const cambiar = (cambios) => {
     setForm((f) => ({ ...f, ...cambios }));
     if (campoInvalido && campoInvalido in cambios) setCampoInvalido(null);
@@ -211,6 +225,7 @@ export function Buscar() {
     const nuevo = { ...form, lugar: PUNTO_PROPIO };
     setPuntoPropio(punto);
     setForm(nuevo);
+    setConflicto(null);
     buscar(nuevo, punto);
   };
 
@@ -228,7 +243,10 @@ export function Buscar() {
             puntoPropio={puntoPropio}
             invalido={campoInvalido}
             onCambiar={cambiar}
-            onBuscar={() => buscar(form, puntoPropio)}
+            onBuscar={() => {
+              setConflicto(null);
+              buscar(form, puntoPropio);
+            }}
             buscando={estado === 'cargando'}
           />,
           barra,
@@ -272,6 +290,11 @@ export function Buscar() {
             )}
           </header>
 
+          {conflicto && (
+            <p className="mx-5 mt-4 bg-rojo/10 px-4 py-3 lg:mx-6" role="alert">
+              {conflicto}
+            </p>
+          )}
           <div className="min-h-0 flex-1 overflow-y-auto" aria-live="polite" aria-busy={estado === 'cargando'}>
             {estado === 'error' && (
               <div id="busqueda-error" className="m-5 flex gap-3 bg-rojo/10 p-4 text-letra" role="alert">
@@ -332,7 +355,7 @@ export function Buscar() {
                           >
                             {c.titulo}
                           </button>
-                          <div className="text-[0.9375rem] text-tenue">
+                          <div className="text-[0.875rem] text-tenue">
                             {c.barrio} · {formatoDistancia(c.distancia)}
                           </div>
                         </td>
@@ -350,7 +373,9 @@ export function Buscar() {
             )}
           </div>
 
-          {seleccionada && busqueda && estado === 'listo' && <Detalle cochera={seleccionada} busqueda={busqueda} />}
+          {seleccionada && busqueda && estado === 'listo' && (
+            <Detalle key={seleccionada.id} cochera={seleccionada} busqueda={busqueda} alConflicto={volverABuscar} />
+          )}
 
           {usandoMocks && (
             <p className="border-t border-[#1d1e22] px-5 py-2 text-sm text-tenue lg:px-6">

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { mensajeDeError } from '../api/errores.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { AvisoError, Campo } from '../componentes/Campo.jsx';
@@ -89,7 +90,14 @@ function Roles() {
                 <p className="mt-1 text-tenue">{r.detalle}</p>
               </div>
               {activo ? (
-                <Celdas texto="Activo" tono="verde" className="text-lg" />
+                <span className="flex flex-wrap items-center gap-4">
+                  {r.valor === 'PROPIETARIO' && (
+                    <Link to="/mis-cocheras" className="font-semibold text-ambar underline">
+                      Tus cocheras
+                    </Link>
+                  )}
+                  <Celdas texto="Activo" tono="verde" className="text-lg" />
+                </span>
               ) : (
                 <button type="button" className="boton boton-secundario" onClick={() => sumar(r.valor)} disabled={sumando !== null}>
                   {sumando === r.valor ? 'Sumando…' : 'Sumá este rol'}

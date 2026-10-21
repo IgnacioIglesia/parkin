@@ -85,7 +85,7 @@
   .campo::placeholder {
     color: #8b8e93;
   }
-  .campo:read-only {
+  input.campo:read-only {
     color: var(--color-tenue);
     border-style: dashed;
   }
