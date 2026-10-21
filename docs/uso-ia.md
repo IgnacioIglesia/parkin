@@ -11,3 +11,4 @@ _Qué herramientas usamos y para qué tipo de tareas._
 | Fecha | Quién | Herramienta | Qué se consultó / decidió | Qué se aceptó o cambió |
 |---|---|---|---|---|
 | 2026-10-21 | Ignacio | Claude Code | Estructura inicial del repo a partir de la letra y la preentrega | Esqueleto de carpetas, docker-compose, docs |
+| 2026-10-21 | Diego | Claude Code | Tipos auxiliares del esquema GraphQL de Cocheras en `docs/contratos.md` | Se definieron Punto, Franja, TipoVehiculo, Propietario y CocheraInput respetando los nombres del contrato |

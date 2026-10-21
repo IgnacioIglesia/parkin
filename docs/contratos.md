@@ -80,7 +80,64 @@ type Mutation {
 }
 ```
 
-Los tipos auxiliares (`Punto`, `PuntoInput`, `Franja`, `FranjaInput`, `TipoVehiculo`, `Propietario`, `CocheraInput`) quedan por definir por el responsable de Cocheras y se agregan acá por PR. Límite de profundidad de query: 5.
+Tipos auxiliares:
+
+```graphql
+"Coordenadas WGS84 en grados decimales"
+type Punto {
+  lat: Float!
+  lng: Float!
+}
+
+input PuntoInput {
+  lat: Float!
+  lng: Float!
+}
+
+"Tamaño máximo de vehículo que admite la cochera: MOTO < AUTO < CAMIONETA"
+enum TipoVehiculo {
+  MOTO
+  AUTO
+  CAMIONETA
+}
+
+"Franja semanal en hora de Montevideo. diaSemana: 1 = lunes ... 7 = domingo"
+type Franja {
+  diaSemana: Int!
+  horaDesde: String!   # "HH:MM"
+  horaHasta: String!   # "HH:MM"; "24:00" = fin del día
+}
+
+input FranjaInput {
+  diaSemana: Int!
+  horaDesde: String!
+  horaHasta: String!
+}
+
+"Solo el id: los datos del usuario viven en Usuarios (database per service)"
+type Propietario {
+  id: ID!
+}
+
+input CocheraInput {
+  titulo: String!
+  precioHora: Float!          # en UYU
+  tipoVehiculo: TipoVehiculo!
+  direccionExacta: String!
+  ubicacion: PuntoInput!      # ubicación exacta; la aproximada la calcula el servicio
+  fotos: [String!]            # URLs de las fotos ya subidas
+}
+```
+
+Reglas:
+- `desde` y `hasta` de `buscarCocheras` van en ISO-8601 UTC. La búsqueda devuelve solo cocheras disponibles en toda la franja.
+- `tipo` en `buscarCocheras` devuelve las cocheras donde entra ese vehículo (una `CAMIONETA` admite también `AUTO` y `MOTO`).
+- `ubicacionAproximada` está desplazada entre 100 y 300 m de la real, fija para cada cochera. `direccionExacta` es `null` salvo para el propietario o un conductor con reserva confirmada.
+- Las horas de `Franja` van alineadas a :00 o :30, con `horaDesde < horaHasta`. Una franja no cruza la medianoche: 22:00 a 06:00 se carga como dos franjas.
+- `definirDisponibilidad` reemplaza todas las franjas de la cochera. `actualizarCochera` reemplaza todos los campos del input.
+- `crearCochera`, `actualizarCochera`, `definirDisponibilidad`, `eliminarCochera` y `misCocheras` exigen el rol `PROPIETARIO`. Solo el dueño puede modificar su cochera.
+
+Límite de profundidad de query: 5.
 
 ## 7. Eventos (RabbitMQ)
 
