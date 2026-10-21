@@ -35,6 +35,20 @@ export function crearServicioPagos({ pool, pasarela, notificar, logger, config, 
     }
   }
 
+  // El intento anterior falló por la pasarela. Se vuelve a abrir si la reserva sigue pagable y no hay
+  // otro pago vivo; si ya hay uno pendiente, ese es el que se devuelve.
+  async function reabrirIntento(db, anulado, reservaId) {
+    const reserva = await repo.reservaLocal(db, reservaId);
+    if (!reserva || reserva.estado !== 'PENDIENTE_PAGO' || (reserva.expira_en && reserva.expira_en <= new Date())) {
+      throw new ErrorHttp(409, 'RESERVA_NO_PAGABLE', 'La reserva ya no se puede pagar');
+    }
+    const vivo = await repo.pagoVivoDeReserva(db, reservaId);
+    if (vivo?.estado === 'PENDIENTE') return { pago: vivo, responsable: false };
+    if (vivo) throw new ErrorHttp(409, 'PAGO_EN_CURSO', 'Esa reserva ya tiene un pago aprobado');
+    // Esta llamada vuelve a ser la responsable del intento: si la pasarela falla otra vez, lo anula.
+    return { pago: await repo.reabrirPago(db, anulado.id), responsable: true };
+  }
+
   // --- POST /pagos -------------------------------------------------------------------------
 
   async function crearPago({ usuarioId, reservaId, idempotencyKey, traceId }) {
@@ -50,7 +64,14 @@ export function crearServicioPagos({ pool, pasarela, notificar, logger, config, 
         if (existente.usuario_id !== usuarioId || existente.reserva_id !== reservaId) {
           throw new ErrorHttp(409, 'IDEMPOTENCY_KEY_EN_USO', 'Esa Idempotency-Key ya se usó para otro pago');
         }
-        return existente;
+        // Un cliente que reusa su clave en cada reintento no debe quedar atascado con un intento
+        // que se anuló solo porque la pasarela no respondía: ese intento se reabre.
+        if (!(existente.estado === 'RECHAZADO' && existente.motivo_rechazo === 'pasarela_no_disponible')) {
+          return existente;
+        }
+        const reabierto = await reabrirIntento(db, existente, reservaId);
+        creado = reabierto.responsable;
+        return reabierto.pago;
       }
 
       const reserva = await repo.reservaLocal(db, reservaId);

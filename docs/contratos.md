@@ -142,7 +142,7 @@ El contrato original no decía qué pasa si se cobra algo que ya no corresponde.
 
 - El reembolso es idempotente por orden. Si la pasarela falla, queda pendiente y Pagos lo reintenta cada 30 s.
 - `GET /pagos/{id}` agrega `reembolso: { "estado": "PENDIENTE" | "REEMBOLSADO" }` cuando corresponde.
-- Códigos de error que se suman a la tabla de `POST /pagos`: `409 IDEMPOTENCY_KEY_EN_USO` (esa clave ya se usó para otro pago u otra reserva) y `503 PASARELA_NO_DISPONIBLE` (el intento se anula sin avisar a Reservas, así la reserva se puede volver a pagar con otra `Idempotency-Key`). En `GET /pagos/{id}`: `404 PAGO_NO_ENCONTRADO` y `403 NO_ES_TU_PAGO`. En el webhook: `401 FIRMA_INVALIDA`.
+- Códigos de error que se suman a la tabla de `POST /pagos`: `409 IDEMPOTENCY_KEY_EN_USO` (esa clave ya se usó para otro pago u otra reserva) y `503 PASARELA_NO_DISPONIBLE` (el intento se anula sin avisar a Reservas y la reserva se puede volver a pagar: con **la misma** `Idempotency-Key` el intento se reabre y devuelve el checkout, que es lo que hace el front al reintentar; con otra clave se crea uno nuevo). En `GET /pagos/{id}`: `404 PAGO_NO_ENCONTRADO` y `403 NO_ES_TU_PAGO`. En el webhook: `401 FIRMA_INVALIDA`.
 - El webhook devuelve `200 { "resultado": ... }` con `aprobado`, `rechazado`, `repetido`, `reembolso`, `desconocido` (referencia que no existe) o `no_coincide` (monto, moneda u orden distintos a los del pago; no se toca el pago).
 - Un pago por reserva: como máximo uno `PENDIENTE` o `APROBADO` a la vez (índice único parcial). Los pedidos de pago de una misma reserva se serializan, así que 20 clics simultáneos, aunque lleven claves distintas, crean un solo pago y una sola orden en la pasarela.
 

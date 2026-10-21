@@ -208,3 +208,78 @@ test('GET /pagos/{id}: el dueño lo ve; otro usuario 403; inexistente 404; id in
   assert.equal((await request(app).get(`/pagos/${creado.pagoId}`)).status, 401);
   assert.equal((await estadoDelPago(creado.pagoId)).estado, 'PENDIENTE');
 });
+
+// --- Un cliente que reutiliza su Idempotency-Key en cada reintento (como el front) ---
+
+test('con la misma clave, tras un fallo de la pasarela el intento se reabre y devuelve el checkout', async () => {
+  const reserva = await reservaConocida(procesador);
+  const token = tokenDe(reserva.conductorId);
+  const clave = randomUUID();
+
+  pasarela.caida = true;
+  assert.equal((await post(token, reserva.reservaId, clave)).status, 503);
+  pasarela.caida = false;
+
+  const reintento = await post(token, reserva.reservaId, clave);
+  assert.equal(reintento.status, 201);
+  assert.equal(reintento.body.estado, 'PENDIENTE');
+  assert.match(reintento.body.checkoutUrl, /checkout\/mock-/);
+  assert.equal((await pool.query('SELECT count(*)::int n FROM pago')).rows[0].n, 1, 'es el mismo pago, no uno nuevo');
+  const fila = (await pool.query('SELECT motivo_rechazo FROM pago')).rows[0];
+  assert.equal(fila.motivo_rechazo, null);
+
+  const otraVez = await post(token, reserva.reservaId, clave);
+  assert.equal(otraVez.status, 200);
+  assert.deepEqual(otraVez.body, reintento.body);
+});
+
+test('si la pasarela vuelve a fallar al reabrir, el intento se anula de nuevo y se puede seguir reintentando', async () => {
+  const reserva = await reservaConocida(procesador);
+  const token = tokenDe(reserva.conductorId);
+  const clave = randomUUID();
+  pasarela.caida = true;
+  for (let i = 0; i < 3; i++) assert.equal((await post(token, reserva.reservaId, clave)).status, 503);
+  assert.equal((await pool.query('SELECT estado FROM pago')).rows[0].estado, 'RECHAZADO');
+  assert.equal((await eventosSalientes()).length, 0, 'nunca se le avisa a Reservas');
+  pasarela.caida = false;
+  assert.equal((await post(token, reserva.reservaId, clave)).status, 201);
+});
+
+test('reabrir no es posible si la reserva ya no se puede pagar', async () => {
+  const reserva = await reservaConocida(procesador);
+  const token = tokenDe(reserva.conductorId);
+  const clave = randomUUID();
+  pasarela.caida = true;
+  await post(token, reserva.reservaId, clave);
+  pasarela.caida = false;
+  await procesador.procesar(evento('reserva.expirada', { ...reserva, estado: 'EXPIRADA', motivo: 'plazo_vencido' }));
+  const r = await post(token, reserva.reservaId, clave);
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error.codigo, 'RESERVA_NO_PAGABLE');
+});
+
+test('un pago rechazado de verdad por la pasarela NO se reabre al repetir la clave', async () => {
+  const reserva = await reservaConocida(procesador);
+  const token = tokenDe(reserva.conductorId);
+  const clave = randomUUID();
+  const creado = await post(token, reserva.reservaId, clave);
+  await pool.query(`UPDATE pago SET estado = 'RECHAZADO', motivo_rechazo = 'fondos_insuficientes' WHERE id = $1`, [creado.body.pagoId]);
+  const repetido = await post(token, reserva.reservaId, clave);
+  assert.equal(repetido.status, 200);
+  assert.equal(repetido.body.estado, 'RECHAZADO');
+  assert.equal(repetido.body.motivo, 'fondos_insuficientes');
+});
+
+test('con otra clave pendiente creada mientras tanto, reabrir devuelve ese pago', async () => {
+  const reserva = await reservaConocida(procesador);
+  const token = tokenDe(reserva.conductorId);
+  const vieja = randomUUID();
+  pasarela.caida = true;
+  await post(token, reserva.reservaId, vieja);
+  pasarela.caida = false;
+  const otro = await post(token, reserva.reservaId, randomUUID()); // alguien (otra pestaña) pagó con otra clave
+  assert.equal(otro.status, 201);
+  const reintento = await post(token, reserva.reservaId, vieja);
+  assert.equal(reintento.status, 200);
+  assert.equal(reintento.body.pagoId, otro.body.pagoId);
+});

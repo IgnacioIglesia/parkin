@@ -63,6 +63,18 @@ export async function insertarPago(db, { reservaId, usuarioId, monto, moneda, id
   return rows[0];
 }
 
+// Reabre un intento que se había anulado porque la pasarela no respondió (ver crearPago).
+export async function reabrirPago(db, pagoId) {
+  const { rows } = await db.query(
+    `UPDATE pago SET estado = 'PENDIENTE', motivo_rechazo = NULL, id_externo = NULL, checkout_url = NULL,
+            actualizado_en = now(), version = version + 1
+      WHERE id = $1 AND estado = 'RECHAZADO' AND motivo_rechazo = 'pasarela_no_disponible'
+      RETURNING *`,
+    [pagoId],
+  );
+  return rows[0] ?? null;
+}
+
 export async function guardarOrden(db, pagoId, idExterno, checkoutUrl) {
   const { rows } = await db.query(
     `UPDATE pago SET id_externo = $2, checkout_url = $3, actualizado_en = now(), version = version + 1
