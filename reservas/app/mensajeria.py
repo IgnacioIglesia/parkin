@@ -3,9 +3,10 @@ import logging
 import threading
 
 import pika
+from opentelemetry.trace import SpanKind
 from psycopg_pool import ConnectionPool
 
-from . import metricas
+from . import metricas, telemetria
 from .outbox import drenar
 from .procesador import EventoInvalido, procesar_evento
 
@@ -40,17 +41,21 @@ class Publicador(threading.Thread):
                     def publicar(routing_key: str, evento: dict) -> None:
                         # mandatory: si ninguna cola recibe el mensaje, falla y se reintenta
                         # en lugar de perderlo en silencio.
-                        canal.basic_publish(
-                            EXCHANGE,
-                            routing_key,
-                            json.dumps(evento).encode(),
-                            pika.BasicProperties(
-                                content_type="application/json",
-                                delivery_mode=2,
-                                message_id=evento["eventId"],
-                            ),
-                            mandatory=True,
-                        )
+                        with telemetria.span_de_evento(
+                            f"publicar {routing_key}", evento.get("traceId"), SpanKind.PRODUCER,
+                            **{"messaging.system": "rabbitmq", "messaging.destination.name": EXCHANGE, "messaging.rabbitmq.destination.routing_key": routing_key},
+                        ):
+                            canal.basic_publish(
+                                EXCHANGE,
+                                routing_key,
+                                json.dumps(evento).encode(),
+                                pika.BasicProperties(
+                                    content_type="application/json",
+                                    delivery_mode=2,
+                                    message_id=evento["eventId"],
+                                ),
+                                mandatory=True,
+                            )
                         metricas.EVENTOS_PUBLICADOS.labels(routing_key).inc()
 
                     while not self._detener.is_set():

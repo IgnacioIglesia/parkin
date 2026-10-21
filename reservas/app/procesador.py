@@ -4,7 +4,9 @@ from uuid import UUID, uuid4
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from . import eventos, logs, metricas
+from opentelemetry.trace import SpanKind
+
+from . import eventos, logs, metricas, telemetria
 from .repository import COLUMNAS
 
 log = logging.getLogger("reservas.procesador")
@@ -77,7 +79,8 @@ def procesar_evento(pool: ConnectionPool, evento: dict) -> str:
     reserva_id = datos.get("reservaId") if isinstance(datos, dict) else None
     trace_id = evento.get("traceId") if isinstance(evento, dict) else None
 
-    with logs.contexto(trace_id=trace_id, reserva_id=str(reserva_id) if reserva_id else None):
+    with logs.contexto(trace_id=trace_id, reserva_id=str(reserva_id) if reserva_id else None), \
+            telemetria.span_de_evento(f"procesar {tipo}", trace_id, SpanKind.CONSUMER, **{"messaging.system": "rabbitmq", "reserva.id": str(reserva_id)}):
         try:
             resultado = _procesar(pool, evento)
         except EventoInvalido:
