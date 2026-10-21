@@ -1,12 +1,94 @@
 # Observabilidad
 
-La letra pide al menos uno de los pilares (logs, métricas, trazas). Completar con lo implementado.
+La letra pide al menos uno de los pilares. Implementamos los tres (logs, métricas y trazas), unidos por un mismo `traceId`, y Grafana como punto único para consultarlos.
 
-- **Pilar elegido:** _por definir_
-- **Cómo se implementó:** _por definir_
-- **Beneficios / qué permitió detectar:** _por definir_
+- **Pilares:** logs estructurados (Loki), métricas (Prometheus) y trazas distribuidas (Jaeger).
+- **Cómo se implementó:** cada servicio loguea JSON a stdout, expone `GET /metrics` y propaga el header W3C `traceparent`. La infraestructura recolecta todo sin que los servicios conozcan Loki ni Grafana.
+- **Qué permitió detectar:** ver [Hallazgos](#hallazgos).
 
-Ideas: logs estructurados (JSON) con `request_id` propagado entre servicios; métricas Prometheus + Grafana (reservas/min, tasa de pagos fallidos, latencia); health endpoints por servicio.
+## Arquitectura
+
+```mermaid
+flowchart LR
+    S[Servicios] -- stdout JSON --> A[Alloy] --> L[(Loki)]
+    P[(Prometheus)] -- GET /metrics cada 15 s --> S
+    P -- /metrics/detailed --> MQ[RabbitMQ]
+    S -- OTLP HTTP :4318 --> J[(Jaeger)]
+    G[Grafana] --> L & P & J
+```
+
+| Componente | Qué hace | Configuración |
+|---|---|---|
+| Alloy | Lee los logs de todos los contenedores de Compose por el socket de Docker y los manda a Loki con las etiquetas `servicio` y `nivel` | `infra/alloy/config.alloy` |
+| Loki | Guarda los logs | Imagen por defecto |
+| Prometheus | Lee `/metrics` de cada servicio y la cantidad de mensajes por cola de RabbitMQ; evalúa las alertas | `infra/prometheus/` |
+| Jaeger | Recibe trazas por OTLP y las muestra | Imagen all-in-one |
+| Grafana | Dashboard y consultas. Desde un log se salta a su traza en Jaeger, y desde una traza a los logs de todos los servicios con ese `traceId` | `infra/grafana/` (se carga solo al arrancar) |
+
+## Cómo usarlo
+
+Con `docker compose up --build`:
+
+| Qué | Dónde |
+|---|---|
+| Dashboard "Parkin" (pantalla de inicio de Grafana) | http://localhost:3030 |
+| Seguir una request en todos los servicios | Grafana → Explore → Loki → `{servicio=~".+"} \|= "<traceId>"` |
+| Ver la traza de una request | Grafana → Explore → Jaeger, o http://localhost:16686 |
+| Alertas activas | http://localhost:9090/alerts |
+
+El `traceId` de una request llega en el header de respuesta `X-Trace-Id` del gateway. Grafana abre sin login (acceso anónimo, solo para desarrollo).
+
+El dashboard muestra: servicios arriba, requests por segundo y latencia p95 por servicio; reservas por minuto y conflictos 409 (la competencia por la misma franja); operaciones GraphQL de Cocheras, aciertos de caché, eventos consumidos y consultas a Reservas; mensajes por cola de RabbitMQ (incluida la DLQ) y los logs de advertencia y error de todos los servicios.
+
+## Cómo sumar un servicio
+
+1. **Logs:** JSON a stdout, una línea por evento, con `nivel`, `servicio`, `mensaje` y `traceId` cuando haya. Alloy los toma solo. Nunca contraseñas, tokens ni datos de tarjeta.
+2. **Métricas:** `GET /metrics` en formato Prometheus, con nombres `<servicio>_http_requests_total{metodo,ruta,estado}` y `<servicio>_http_request_duration_seconds`. `ruta` es la plantilla, nunca un id. Así aparecen solos en los paneles de requests y latencia. Después, descomentar el job del servicio en `infra/prometheus/prometheus.yml`.
+3. **Trazas:** usar el SDK de OpenTelemetry del lenguaje con `OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318` y `OTEL_SERVICE_NAME=<servicio>` en el compose. En Node: ver `cocheras/src/telemetria.js`. En Python: `opentelemetry-instrumentation-fastapi` y `opentelemetry-exporter-otlp-proto-http`.
+4. **Eventos:** copiar el `traceId` al evento (contratos §7). Quien consume lo usa como padre de su span y la traza sigue en Jaeger.
+
+## Alertas
+
+Además de las de Reservas (más abajo), `infra/prometheus/alertas.yml` define:
+
+| Alerta | Condición |
+|---|---|
+| `ServicioCaido` | Prometheus no puede leer las métricas de un servicio durante 1 minuto |
+| `EventosEnDLQ` | Hay mensajes en `cocheras.dlq` durante 1 minuto |
+| `CocherasErroresInternos` | Más de 2 % de operaciones GraphQL con error interno durante 5 minutos |
+| `CocherasBusquedaLenta` | p95 de `buscarCocheras` mayor a 500 ms durante 5 minutos |
+| `CocherasSinRabbitMQ` | El consumidor de Cocheras desconectado durante 1 minuto |
+| `CocherasNoLlegaAReservas` | Fallan las consultas de ocupación a Reservas durante 5 minutos |
+
+## Cocheras (implementado)
+
+**Logs.** JSON a stdout (pino) con `nivel`, `servicio`, `mensaje`, `traceId` y, cuando corresponde, `usuarioId`, `cocheraId` y `reservaId`. Una línea por request. `/health`, `/ready` y `/metrics` no se registran. Los headers `Authorization` y `Cookie` se ocultan.
+
+**Métricas.** `GET /metrics`:
+
+| Métrica | Qué mide |
+|---|---|
+| `cocheras_http_requests_total{metodo,ruta,estado}`, `cocheras_http_request_duration_seconds` | Requests y latencia, con los mismos nombres que Reservas |
+| `cocheras_graphql_operaciones_total{operacion,resultado}` | Cada campo raíz (`buscarCocheras`, `crearCochera`, ...) con `ok`, `error_cliente` o `error_interno`. GraphQL responde 200 aunque haya errores, por eso se mide aparte |
+| `cocheras_graphql_duracion_seconds{operacion}` | Latencia por operación |
+| `cocheras_busquedas_cache_total{resultado}` | `hit` o `miss` de la caché de Redis |
+| `cocheras_consultas_reservas_total{resultado}`, `cocheras_consultas_reservas_duracion_seconds` | Consultas de ocupación a Reservas |
+| `cocheras_eventos_procesados_total{tipo,resultado}` | `aplicado`, `duplicado`, `invalido` o `error` |
+| `cocheras_cambios_total{operacion}` | Altas, ediciones, cambios de disponibilidad y bajas |
+| `cocheras_rabbitmq_conectado`, `cocheras_redis_disponible` | Estado de las dependencias (1 o 0) |
+
+**Trazas.** OpenTelemetry con instrumentación automática de HTTP, GraphQL, pg, Redis, amqplib y fetch, exportada a Jaeger. El span de cada request continúa el `traceparent` del gateway, así que su `traceId` es el mismo que el de los logs. La consulta de ocupación a Reservas propaga el `traceparent`. Al consumir un evento, Cocheras usa el `traceId` que viene dentro del mensaje como padre: el procesamiento aparece en la misma traza que la request que originó la reserva (Jaeger avisa "invalid parent span" porque el evento no trae el id del span padre, solo el de la traza).
+
+Se carga con `node --import ./src/telemetria.js` y solo se activa si está definida `OTEL_EXPORTER_OTLP_ENDPOINT`.
+
+## Hallazgos
+
+Probamos el stack completo con un script que crea una cochera, busca, lanza 10 reservas simultáneas sobre la misma franja, aprueba el pago publicando `pago.aprobado` y manda un evento inválido. Con un solo `traceId` se ve en Loki y en Jaeger el recorrido entero: búsqueda en Cocheras, consulta de ocupación en Reservas, reserva creada, pago aplicado y dirección habilitada en Cocheras. El evento inválido terminó en `cocheras.dlq` y disparó la alerta `EventosEnDLQ`.
+
+La observabilidad detectó dos problemas:
+
+1. **Deadlock en reservas simultáneas.** En algunas corridas, 9 de las 10 reservas respondieron 500 en lugar de 409. Los logs de Reservas mostraron `psycopg.errors.DeadlockDetected` en el `INSERT`: con varias transacciones esperándose en la restricción de exclusión, Postgres aborta algunas por deadlock. **Nunca hubo doble reserva**: siempre entró una sola, pero el cliente recibía un error de servidor en lugar de "franja ocupada".
+2. **RabbitMQ no arrancaba desde cero.** `infra/rabbitmq/definitions.json` no declaraba el virtual host ni usuarios, y con un volumen nuevo RabbitMQ fallaba con `Please create virtual host "/" prior to importing definitions`. Ya está corregido (PR #13).
 
 ## Reservas (implementado)
 

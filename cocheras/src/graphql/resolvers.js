@@ -9,6 +9,7 @@ import {
   prohibido,
   servicioNoDisponible,
 } from '../errores.js';
+import { busquedasCache, cocherasCambios } from '../metricas.js';
 
 const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 const ISO_CON_ZONA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
@@ -100,7 +101,8 @@ async function sinOcupacion(ctx, cocheras, desde, hasta) {
 }
 
 // Todo cambio en una cochera deja viejas las búsquedas cacheadas.
-async function invalidarBusquedas(ctx) {
+async function registrarCambio(ctx, operacion) {
+  cocherasCambios.inc({ operacion });
   await ctx.cache.invalidarBusquedas();
 }
 
@@ -119,6 +121,7 @@ export const resolvers = {
 
       const parametros = { lat: cerca.lat, lng: cerca.lng, radioMetros, desde: inicio, hasta: fin, tipo: tipo ?? null };
       const cacheada = await ctx.cache.obtenerBusqueda(parametros);
+      busquedasCache.inc({ resultado: cacheada ? 'hit' : 'miss' });
       if (cacheada) return cacheada;
 
       const candidatas = await repo.buscarCerca(ctx.pool, {
@@ -152,7 +155,7 @@ export const resolvers = {
       const usuario = requerirPropietario(ctx);
       const datos = validarCochera(input);
       const cochera = await repo.crear(ctx.pool, { id: randomUUID(), propietarioId: usuario.id, ...datos });
-      await invalidarBusquedas(ctx);
+      await registrarCambio(ctx, 'crear');
       ctx.log.info({ cocheraId: cochera.id, usuarioId: usuario.id }, 'cochera creada');
       return cochera;
     },
@@ -161,7 +164,7 @@ export const resolvers = {
       const actual = await cocheraPropia(ctx, id);
       const cochera = await repo.actualizar(ctx.pool, actual.id, validarCochera(input));
       if (!cochera) throw noEncontrada();
-      await invalidarBusquedas(ctx);
+      await registrarCambio(ctx, 'actualizar');
       return cochera;
     },
 
@@ -169,7 +172,7 @@ export const resolvers = {
       const cochera = await cocheraPropia(ctx, id);
       await repo.reemplazarFranjas(ctx.pool, cochera.id, validarFranjas(franjas));
       ctx.franjas.clear(cochera.id);
-      await invalidarBusquedas(ctx);
+      await registrarCambio(ctx, 'disponibilidad');
       return cochera;
     },
 
@@ -187,7 +190,7 @@ export const resolvers = {
       }
       if (ocupadas.length > 0) throw conflicto('La cochera tiene reservas pendientes o confirmadas');
       await repo.eliminar(ctx.pool, cochera.id);
-      await invalidarBusquedas(ctx);
+      await registrarCambio(ctx, 'eliminar');
       ctx.log.info({ cocheraId: cochera.id, usuarioId: ctx.usuario.id }, 'cochera eliminada');
       return true;
     },
