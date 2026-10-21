@@ -121,7 +121,8 @@ export async function reemplazarFranjas(pool, cocheraId, franjas) {
 // Ids de las cocheras (entre las pedidas) en las que el conductor tiene reserva confirmada.
 export async function cocherasConAcceso(pool, conductorId, cocheraIds) {
   const { rows } = await pool.query(
-    'SELECT DISTINCT cochera_id FROM acceso_direccion WHERE conductor_id = $1 AND cochera_id = ANY($2)',
+    `SELECT DISTINCT cochera_id FROM acceso_direccion
+     WHERE conductor_id = $1 AND cochera_id = ANY($2) AND NOT revocado`,
     [conductorId, cocheraIds],
   );
   return new Set(rows.map((r) => r.cochera_id));

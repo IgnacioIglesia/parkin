@@ -41,7 +41,7 @@ stateDiagram-v2
 
 Solo las reservas en `PENDIENTE_PAGO` y `CONFIRMADA` ocupan la franja. Cualquier otra transición se rechaza. Cada cambio de estado queda registrado en la tabla `reserva_historial`, como auditoría.
 
-> `FINALIZADA` existe en el modelo, pero todavía no hay un proceso que marque como finalizadas las reservas cuya franja terminó.
+> `FINALIZADA` la marca el mismo proceso periódico de la sección 8, una vez que termina la franja de una reserva confirmada. No publica evento: `reserva.finalizada` se agregará junto con su primer consumidor (las calificaciones), porque sin una cola enlazada el mensaje no tendría a dónde ir.
 
 ## 4. Concurrencia: por qué no puede haber una doble reserva
 
@@ -77,7 +77,15 @@ Las redes reintentan: el conductor puede tocar dos veces "Reservar", o la app re
 
 ## 6. Comunicación entre servicios
 
-### 6.1 Eventos
+### 6.1 Consulta síncrona a Cocheras
+
+Para crear una reserva, Reservas necesita dos datos que **no** puede aceptar del cliente: el propietario y el precio. Los pide a Cocheras con una query GraphQL (`cochera(id) { propietario { id } precioHora }`) y calcula el monto como `precioHora × horas de la franja`. Es una llamada síncrona porque el conductor espera la respuesta y la reserva no puede crearse sin esos datos; por eso tiene timeout de 3 segundos.
+
+- Si la cochera no existe, responde `404`; si Cocheras no responde o devuelve un error, `503` y no se crea nada.
+- Un reintento con la misma `Idempotency-Key` no consulta a Cocheras, así que sigue funcionando aunque esté caída.
+- Hay una dependencia en las dos direcciones: Cocheras consulta la ocupación a Reservas (y tolera que falle, devolviendo la búsqueda sin filtrar), mientras que Reservas **no** puede crear reservas sin Cocheras.
+
+### 6.2 Eventos
 
 Reservas publica y consume eventos en el exchange `topic` `cocheras.eventos`.
 
@@ -92,7 +100,7 @@ Reservas publica y consume eventos en el exchange `topic` `cocheras.eventos`.
 
 El formato de cada mensaje y su payload están en [`contratos.md`](../contratos.md).
 
-### 6.2 Outbox transaccional
+### 6.3 Outbox transaccional
 
 **El problema.** Si el servicio guarda la reserva en la base y después publica en RabbitMQ, un fallo entre los dos pasos deja un estado inconsistente: una reserva sin evento (Pagos nunca cobra) o un evento de una transacción que se revirtió.
 
@@ -114,7 +122,7 @@ flowchart LR
 - Con varias réplicas, `SELECT … FOR UPDATE SKIP LOCKED` evita que dos publicadores tomen el mismo evento.
 - La entrega es *at-least-once*: un evento puede publicarse más de una vez, por eso todos los consumidores son idempotentes.
 
-### 6.3 Consumo idempotente
+### 6.4 Consumo idempotente
 
 Al recibir `pago.aprobado` o `pago.rechazado`, el consumidor hace en **una sola transacción**: registrar el `eventId` en `evento_procesado`, cambiar el estado, anotar el historial y encolar el evento de salida. Si el `eventId` ya estaba registrado, el mensaje se descarta. Si algo falla, nada queda a medias y el reintento vuelve a procesarlo completo.
 
@@ -154,12 +162,14 @@ sequenceDiagram
 
 Un conflicto al reservar (`409`) se corta antes de publicar nada, así que no hay nada que deshacer.
 
-## 8. Retención y expiración
+## 8. Retención, expiración y finalización
 
 Al crear la reserva, la franja queda retenida 10 minutos (`expira_en`). Un proceso interno corre al arrancar y luego cada 60 segundos: pasa a `EXPIRADA` las reservas vencidas sin pago y publica `reserva.expirada`. Así, quien abandona el checkout no bloquea la cochera indefinidamente.
 
 - Con varias réplicas, `SKIP LOCKED` hace que cada una tome reservas distintas.
 - Si justo llega un `pago.aprobado` para una reserva que se está expirando, el bloqueo de fila decide quién va primero: la reserva termina confirmada o expirada, nunca ambas y con un solo evento de cierre. Hay un test con 20 reservas en esa carrera.
+- El mismo proceso pasa a `FINALIZADA` las reservas `CONFIRMADA` cuya franja ya terminó. Una reserva confirmada no puede cancelarse una vez comenzada, por lo que esa transición no compite con la cancelación.
+- No se aceptan reservas con `desde` en el pasado (`422`).
 - Como el proceso corre cada 60 segundos, una reserva puede seguir bloqueando la franja hasta un minuto después de su vencimiento. Es una demora aceptada.
 
 ## 9. Decisiones, límites y pendientes
@@ -169,10 +179,9 @@ Para ser honestos en la defensa, esto es lo que hoy **no** está resuelto o veri
 | Tema | Estado |
 |---|---|
 | Identidad del usuario | Se lee del header `X-User-Id`, que debería poner el gateway tras validar el JWT. Falta confirmarlo con el responsable del gateway |
-| Propietario y monto | Hoy los manda el cliente en el body del `POST`. Es provisorio: deben obtenerse de Cocheras, porque el cliente no debe poder fijar el precio |
 | Política de cancelación | Se puede cancelar mientras la reserva esté activa y no haya comenzado; no hay plazos ni reembolsos |
+| Dependencia de Cocheras | Sin Cocheras no se pueden crear reservas (`503`). No hay caché ni valores por defecto a propósito: el precio debe ser el vigente |
 | Pago tardío | Si llega `pago.aprobado` y la reserva ya estaba cancelada o expirada, se ignora con un aviso en el log, pero el cobro ya se hizo. Falta definir quién reembolsa |
-| `FINALIZADA` | No hay proceso que finalice reservas |
 | RabbitMQ y Docker | La lógica de mensajería está probada con la base real, pero la conexión con un broker real y la topología (`definitions.json`, DLQ) no se probaron todavía |
 | Observabilidad | Los eventos llevan `traceId` (desde el header `traceparent`) y hay `/health` y `/ready`. Faltan logs en JSON, métricas de Prometheus y trazas con OpenTelemetry |
 
@@ -194,6 +203,25 @@ La suite del servicio tiene 51 tests de integración contra un PostgreSQL real, 
 cd reservas
 TEST_DATABASE_URL=postgres://app:app@localhost:5443/reservas_test pytest
 ```
+
+### Prueba de carga contra el servicio en ejecución
+
+`reservas/scripts/carga.py` (sin dependencias) dispara cientos de requests que arrancan juntos contra el servicio levantado y verifica la regla central desde afuera, usando solo la API:
+
+```bash
+python3 reservas/scripts/carga.py --clientes 100
+```
+
+| Escenario | Verificación |
+|---|---|
+| 100 conductores, misma cochera y franja | 1 × `201` y 99 × `409`; la cochera queda con una sola franja ocupada |
+| 1 conductor, misma `Idempotency-Key` 100 veces | Todas devuelven la misma reserva; se creó una sola |
+| 100 conductores, 100 cocheras distintas | Las 100 se crean: no hay bloqueos innecesarios |
+| 60 franjas de 2 h desplazadas 30 min sobre una cochera | Ninguna franja ocupada se solapa con otra y **todo rechazo se solapa con una reserva aceptada** (no hay rechazos injustos) |
+
+Al final imprime la diferencia de las métricas (`reservas_creadas_total`, `reservas_conflictos_total`) durante la prueba y termina con código 1 si alguna verificación falla.
+
+Resultado en una corrida local con 100 clientes: 12 de 12 verificaciones correctas, con latencia p95 menor a 100 ms. Como control, al borrar a propósito la restricción de exclusión de la base, la misma prueba falla: los 50 conductores del primer escenario obtienen `201` sobre la misma franja. Es decir, la garantía de no doble reserva la da la restricción y no el código de la aplicación. Medido con un solo servicio y la base en la misma máquina; no representa la latencia de un despliegue real.
 
 ## 11. Factores 12-Factor aplicados a este servicio
 

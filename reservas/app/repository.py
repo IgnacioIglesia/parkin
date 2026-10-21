@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from psycopg import errors
@@ -30,13 +31,13 @@ def crear_reserva(
     propietario_id: UUID,
     desde: datetime,
     hasta: datetime,
-    monto: float,
+    monto: Decimal,
     idempotency_key: str,
     retencion_minutos: int,
     trace_id: str,
 ) -> tuple[dict, bool]:
     """Devuelve (reserva, creada). creada=False si la Idempotency-Key ya existía."""
-    existente = _buscar_por_clave(pool, idempotency_key, conductor_id)
+    existente = reserva_por_clave(pool, idempotency_key, conductor_id)
     if existente:
         return existente, False
 
@@ -66,13 +67,13 @@ def crear_reserva(
         raise FranjaOcupada()
     except errors.UniqueViolation:
         # Dos requests con la misma clave llegaron a la vez: gana el primero.
-        existente = _buscar_por_clave(pool, idempotency_key, conductor_id)
+        existente = reserva_por_clave(pool, idempotency_key, conductor_id)
         if existente:
             return existente, False
         raise
 
 
-def _buscar_por_clave(pool: ConnectionPool, clave: str, conductor_id: UUID) -> dict | None:
+def reserva_por_clave(pool: ConnectionPool, clave: str, conductor_id: UUID) -> dict | None:
     with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         cur.execute(f"SELECT {COLUMNAS} FROM reserva WHERE idempotency_key = %s", (clave,))
         fila = cur.fetchone()

@@ -5,6 +5,7 @@ import request from 'supertest';
 import { crearApp } from '../src/app.js';
 import { crearPool, migrar } from '../src/db.js';
 import { crearLogger } from '../src/logger.js';
+import { cacheNula } from '../src/cache.js';
 
 // Necesitan un PostGIS real. Ejemplo:
 // TEST_DATABASE_URL=postgres://app:app@localhost:5442/cocheras_test npm test
@@ -84,12 +85,12 @@ describe('Cocheras contra PostGIS', { skip: !TEST_DB && 'Definir TEST_DATABASE_U
     await migrar(pool, crearLogger('silent'));
     // Correr las migraciones dos veces no debe fallar.
     await migrar(pool, crearLogger('silent'));
-    ({ app, apollo } = await crearApp({ logger: crearLogger('silent'), pool, reservas }));
+    ({ app, apollo } = await crearApp({ logger: crearLogger('silent'), pool, reservas, cache: cacheNula, consumidor: { conectado: true } }));
   });
 
   beforeEach(async () => {
     ocupacion = () => [];
-    await pool.query('TRUNCATE cochera, franja_disponible, acceso_direccion');
+    await pool.query('TRUNCATE cochera, franja_disponible, acceso_direccion, evento_procesado');
   });
 
   after(async () => {
@@ -207,6 +208,51 @@ describe('Cocheras contra PostGIS', { skip: !TEST_DB && 'Definir TEST_DATABASE_U
       pool.query = consultaOriginal;
     }
     assert.equal(consultasDeFranjas, 1);
+  });
+
+  test('buscarCocheras usa la caché y una mutación la invalida', async () => {
+    const memoria = new Map();
+    let version = 0;
+    const cache = {
+      obtenerBusqueda: async (p) => memoria.get(`${version}:${JSON.stringify(p)}`) ?? null,
+      guardarBusqueda: async (p, r) => void memoria.set(`${version}:${JSON.stringify(p)}`, r),
+      invalidarBusquedas: async () => void version++,
+    };
+    const conCache = await crearApp({ logger: crearLogger('silent'), pool, reservas, cache, consumidor: { conectado: true } });
+    const consultas = [];
+    ocupacion = (id) => (consultas.push(id), []);
+    const buscarEn = async () =>
+      (
+        await request(conCache.app)
+          .post('/graphql')
+          .send({
+            query: `query ($desde: String!, $hasta: String!) {
+              buscarCocheras(cerca: { lat: ${POCITOS.lat}, lng: ${POCITOS.lng} }, radioMetros: 1000, desde: $desde, hasta: $hasta) { id titulo } }`,
+            variables: FRANJA,
+          })
+      ).body.data.buscarCocheras;
+
+    try {
+      const c = await crearCochera();
+      await definirDisponibilidad(c.id, lunesDe14a17);
+      assert.equal((await buscarEn()).length, 1);
+      assert.equal((await buscarEn()).length, 1);
+      assert.equal(consultas.length, 1, 'la segunda búsqueda tenía que salir de la caché');
+
+      const editar = await request(conCache.app)
+        .post('/graphql')
+        .set('X-User-Id', PROPIETARIO.id)
+        .set('X-User-Roles', PROPIETARIO.roles)
+        .send({
+          query: 'mutation ($id: ID!, $input: CocheraInput!) { actualizarCochera(id: $id, input: $input) { id } }',
+          variables: { id: c.id, input: { titulo: 'Renombrada', precioHora: 60, tipoVehiculo: 'AUTO', direccionExacta: 'Av. Brasil 2500', ubicacion: POCITOS } },
+        });
+      assert.equal(editar.body.errors, undefined);
+      assert.equal((await buscarEn())[0].titulo, 'Renombrada');
+      assert.equal(consultas.length, 2);
+    } finally {
+      await conCache.apollo.stop();
+    }
   });
 
   test('buscarCocheras excluye las ocupadas según Reservas', async () => {

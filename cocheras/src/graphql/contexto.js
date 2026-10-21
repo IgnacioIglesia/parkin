@@ -17,12 +17,13 @@ function usuarioDe(req) {
 
 // Un contexto por request: los DataLoader agrupan las consultas de todas las cocheras
 // de la respuesta en una sola (evitan N+1) y su caché no se comparte entre requests.
-export function crearContexto({ req, pool, reservas }) {
+export function crearContexto({ req, pool, reservas, cache }) {
   const usuario = usuarioDe(req);
   return {
     usuario,
     pool,
     reservas,
+    cache,
     log: req.log,
     traceparent: req.headers.traceparent,
     franjas: new DataLoader(async (ids) => {

@@ -93,7 +93,15 @@ async function sinOcupacion(ctx, cocheras, desde, hasta) {
       'Reservas no respondió; la búsqueda no filtra por ocupación',
     );
   }
-  return cocheras.filter((c, i) => resultados[i].status === 'rejected' || resultados[i].value.length === 0);
+  return {
+    cocheras: cocheras.filter((c, i) => resultados[i].status === 'rejected' || resultados[i].value.length === 0),
+    completa: fallidas.length === 0,
+  };
+}
+
+// Todo cambio en una cochera deja viejas las búsquedas cacheadas.
+async function invalidarBusquedas(ctx) {
+  await ctx.cache.invalidarBusquedas();
 }
 
 export const resolvers = {
@@ -109,6 +117,10 @@ export const resolvers = {
         throw entradaInvalida(`La franja no puede superar ${MAX_DIAS_BUSQUEDA} días`);
       }
 
+      const parametros = { lat: cerca.lat, lng: cerca.lng, radioMetros, desde: inicio, hasta: fin, tipo: tipo ?? null };
+      const cacheada = await ctx.cache.obtenerBusqueda(parametros);
+      if (cacheada) return cacheada;
+
       const candidatas = await repo.buscarCerca(ctx.pool, {
         lat: cerca.lat,
         lng: cerca.lng,
@@ -118,7 +130,11 @@ export const resolvers = {
       });
       const franjas = await ctx.franjas.loadMany(candidatas.map((c) => c.id));
       const disponibles = candidatas.filter((c, i) => cubreFranja(franjas[i], inicio, fin));
-      return (await sinOcupacion(ctx, disponibles, inicio, fin)).slice(0, MAX_RESULTADOS);
+      const { cocheras, completa } = await sinOcupacion(ctx, disponibles, inicio, fin);
+      const resultado = cocheras.slice(0, MAX_RESULTADOS);
+      // Un resultado sin el filtro de ocupación no se guarda: se recalcula cuando Reservas vuelva.
+      if (completa) await ctx.cache.guardarBusqueda(parametros, resultado);
+      return resultado;
     },
 
     async cochera(_, { id }, ctx) {
@@ -136,6 +152,7 @@ export const resolvers = {
       const usuario = requerirPropietario(ctx);
       const datos = validarCochera(input);
       const cochera = await repo.crear(ctx.pool, { id: randomUUID(), propietarioId: usuario.id, ...datos });
+      await invalidarBusquedas(ctx);
       ctx.log.info({ cocheraId: cochera.id, usuarioId: usuario.id }, 'cochera creada');
       return cochera;
     },
@@ -144,6 +161,7 @@ export const resolvers = {
       const actual = await cocheraPropia(ctx, id);
       const cochera = await repo.actualizar(ctx.pool, actual.id, validarCochera(input));
       if (!cochera) throw noEncontrada();
+      await invalidarBusquedas(ctx);
       return cochera;
     },
 
@@ -151,6 +169,7 @@ export const resolvers = {
       const cochera = await cocheraPropia(ctx, id);
       await repo.reemplazarFranjas(ctx.pool, cochera.id, validarFranjas(franjas));
       ctx.franjas.clear(cochera.id);
+      await invalidarBusquedas(ctx);
       return cochera;
     },
 
@@ -168,6 +187,7 @@ export const resolvers = {
       }
       if (ocupadas.length > 0) throw conflicto('La cochera tiene reservas pendientes o confirmadas');
       await repo.eliminar(ctx.pool, cochera.id);
+      await invalidarBusquedas(ctx);
       ctx.log.info({ cocheraId: cochera.id, usuarioId: ctx.usuario.id }, 'cochera eliminada');
       return true;
     },

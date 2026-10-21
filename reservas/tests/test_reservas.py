@@ -123,7 +123,7 @@ def test_concurrencia_misma_idempotency_key_crea_una_sola(client, franja):
 def crear(client, cochera, franja, conductor=None, propietario=None):
     body = cuerpo(cochera, *franja)
     if propietario:
-        body["propietario_id"] = str(propietario)
+        client.app.state.cocheras.propietarios[cochera] = propietario
     r = post(client, body, conductor)
     assert r.status_code == 201
     return r.json()

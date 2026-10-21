@@ -15,3 +15,7 @@ def rabbitmq_url() -> str | None:
 
 def expiracion_intervalo_segundos() -> float:
     return float(os.environ.get("EXPIRACION_INTERVALO_SEGUNDOS", "60"))
+
+
+def cocheras_url() -> str:
+    return os.environ["COCHERAS_URL"]
