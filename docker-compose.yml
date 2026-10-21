@@ -149,7 +149,7 @@ services:
 
   grafana:
     image: grafana/grafana:11.1.0
-    ports: ["3000:3000"]
+    ports: ["3030:3000"]  # 3030 y no 3000, que suele estar ocupado por servidores de desarrollo
     depends_on: [prometheus, loki, jaeger]
 
 volumes:
