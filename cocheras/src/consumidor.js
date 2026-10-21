@@ -1,10 +1,33 @@
+import { randomBytes } from 'node:crypto';
 import amqp from 'amqplib';
+import { context, SpanKind, SpanStatusCode, trace, TraceFlags } from '@opentelemetry/api';
 import { EventoInvalido, procesarEvento } from './eventos.js';
+import { eventosProcesados } from './metricas.js';
 
 // Declarada en infra/rabbitmq/definitions.json; los servicios no crean colas.
 const COLA = 'cocheras.reserva-eventos';
 const PREFETCH = 10;
 const REINTENTO_MS = 3000;
+const TRACE_ID = /^[\da-f]{32}$/;
+
+const tracer = trace.getTracer('cocheras');
+
+// Reservas manda el traceId dentro del evento, no en headers AMQP. Para que el
+// procesamiento aparezca en la misma traza en Jaeger, se usa ese traceId como padre.
+// El spanId del padre no viaja, así que Jaeger lo muestra como "padre desconocido".
+function contextoDelEvento(evento) {
+  if (!TRACE_ID.test(evento?.traceId ?? '')) return context.active();
+  return trace.setSpanContext(context.active(), {
+    traceId: evento.traceId,
+    spanId: randomBytes(8).toString('hex'),
+    traceFlags: TraceFlags.SAMPLED,
+    isRemote: true,
+  });
+}
+
+function tipoParaMetrica(evento) {
+  return ['reserva.confirmada', 'reserva.cancelada'].includes(evento?.tipo) ? evento.tipo : 'desconocido';
+}
 
 // Consume los eventos de Reservas con ACK manual (at-least-once) y se reconecta solo si
 // RabbitMQ se cae o la cola todavía no existe.
@@ -20,27 +43,48 @@ export function crearConsumidor({ url, pool, cache, logger }) {
     if (!detenido) temporizador = setTimeout(conectar, REINTENTO_MS);
   }
 
-  async function alRecibir(canal, mensaje) {
-    let evento;
+  async function procesar(canal, mensaje, evento, span) {
     try {
-      evento = JSON.parse(mensaje.content.toString());
+      if (evento === undefined) throw new EventoInvalido('El mensaje no es JSON');
       const resultado = await procesarEvento(pool, cache, evento);
+      eventosProcesados.inc({ tipo: tipoParaMetrica(evento), resultado });
       logger.info(
         { traceId: evento.traceId, eventId: evento.eventId, tipo: evento.tipo, reservaId: evento.datos?.reservaId, resultado },
         'evento procesado',
       );
       canal.ack(mensaje);
     } catch (err) {
-      if (err instanceof SyntaxError || err instanceof EventoInvalido) {
+      span.recordException(err);
+      span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+      if (err instanceof EventoInvalido) {
         // Nunca se va a poder procesar: directo a la DLQ.
+        eventosProcesados.inc({ tipo: tipoParaMetrica(evento), resultado: 'invalido' });
         logger.error({ err, traceId: evento?.traceId }, 'evento inválido, se envía a la DLQ');
         canal.nack(mensaje, false, false);
       } else {
         // Falla transitoria: vuelve a la cola. Tras 3 entregas (x-delivery-limit) va a la DLQ.
+        eventosProcesados.inc({ tipo: tipoParaMetrica(evento), resultado: 'error' });
         logger.warn({ err, traceId: evento?.traceId }, 'error procesando el evento, se reencola');
         canal.nack(mensaje, false, true);
       }
+    } finally {
+      span.end();
     }
+  }
+
+  function alRecibir(canal, mensaje) {
+    let evento;
+    try {
+      evento = JSON.parse(mensaje.content.toString());
+    } catch {
+      evento = undefined;
+    }
+    return tracer.startActiveSpan(
+      `procesar ${tipoParaMetrica(evento)}`,
+      { kind: SpanKind.CONSUMER, attributes: { 'messaging.destination.name': COLA, 'reserva.id': evento?.datos?.reservaId } },
+      contextoDelEvento(evento),
+      (span) => procesar(canal, mensaje, evento, span),
+    );
   }
 
   async function conectar() {

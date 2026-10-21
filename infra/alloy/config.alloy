@@ -1,0 +1,58 @@
+// Grafana Alloy: lee los logs (stdout) de los contenedores de Docker Compose y los
+// manda a Loki. Los servicios no tienen que hacer nada: alcanza con loguear JSON.
+
+discovery.docker "contenedores" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Solo contenedores de Compose. La etiqueta "servicio" es el nombre del servicio en
+// docker-compose.yml (cocheras, reservas, gateway, ...).
+discovery.relabel "contenedores" {
+  targets = discovery.docker.contenedores.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex         = ".+"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "servicio"
+  }
+
+  // Loki loguea cada consulta que recibe (con el texto buscado, por ejemplo un traceId):
+  // recolectarlo ensucia las búsquedas. Alloy tampoco aporta.
+  rule {
+    source_labels = ["servicio"]
+    regex         = "loki|alloy"
+    action        = "drop"
+  }
+}
+
+loki.source.docker "contenedores" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.contenedores.output
+  forward_to = [loki.process.json.receiver]
+}
+
+// Los logs JSON de los servicios traen "nivel"; se usa como etiqueta para filtrar
+// errores rápido. El traceId queda en la línea y Grafana lo convierte en link a Jaeger.
+// Las líneas que no son JSON (Postgres, RabbitMQ) pasan igual, sin nivel.
+loki.process "json" {
+  stage.json {
+    expressions = { nivel = "nivel" }
+  }
+
+  stage.labels {
+    values = { nivel = "" }
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

@@ -7,11 +7,66 @@ import { GraphQLError } from 'graphql';
 import { pinoHttp } from 'pino-http';
 import { crearContexto } from './graphql/contexto.js';
 import { resolvers } from './graphql/resolvers.js';
+import {
+  graphqlDuracion,
+  graphqlOperaciones,
+  httpDuracion,
+  httpRequests,
+  observarDependencias,
+  registro,
+} from './metricas.js';
 import { traceIdDe } from './traza.js';
 
 const typeDefs = readFileSync(new URL('./graphql/schema.graphql', import.meta.url), 'utf8');
 const PROFUNDIDAD_MAXIMA = 5;
-const RUTAS_SIN_LOG = new Set(['/health', '/ready']);
+// Las llaman Docker y Prometheus cada pocos segundos: no se loguean ni se miden.
+const RUTAS_INTERNAS = new Set(['/health', '/ready', '/metrics']);
+const ERRORES_DE_CLIENTE = new Set([
+  'UNAUTHENTICATED',
+  'FORBIDDEN',
+  'NOT_FOUND',
+  'BAD_USER_INPUT',
+  'CONFLICT',
+  'GRAPHQL_PARSE_FAILED',
+  'GRAPHQL_VALIDATION_FAILED',
+]);
+
+// La ruta es la plantilla (/graphql), nunca un id, para no multiplicar las series.
+function medirHttp(req, res, next) {
+  if (RUTAS_INTERNAS.has(req.path)) return next();
+  const fin = httpDuracion.startTimer();
+  res.on('finish', () => {
+    const ruta = req.baseUrl || req.route?.path || 'otra';
+    httpRequests.inc({ metodo: req.method, ruta, estado: res.statusCode });
+    fin({ metodo: req.method, ruta });
+  });
+  next();
+}
+
+// Una métrica por campo raíz (buscarCocheras, crearCochera, ...) y su resultado.
+const medirGraphql = {
+  async requestDidStart() {
+    const inicio = process.hrtime.bigint();
+    let operaciones = ['invalida'];
+    return {
+      async didResolveOperation({ operation }) {
+        operaciones = operation.selectionSet.selections
+          .filter((s) => s.kind === 'Field')
+          .map((s) => s.name.value);
+      },
+      async willSendResponse({ errors }) {
+        const codigos = (errors ?? []).map((e) => e.extensions?.code);
+        const resultado =
+          codigos.length === 0 ? 'ok' : codigos.every((c) => ERRORES_DE_CLIENTE.has(c)) ? 'error_cliente' : 'error_interno';
+        const segundos = Number(process.hrtime.bigint() - inicio) / 1e9;
+        for (const operacion of operaciones) {
+          graphqlOperaciones.inc({ operacion, resultado });
+          graphqlDuracion.observe({ operacion }, segundos);
+        }
+      },
+    };
+  },
+};
 
 // Los errores que no son de la API (SQL, red, bugs) se loguean con su traceId y al
 // cliente le llega un mensaje genérico, sin detalles internos.
@@ -39,10 +94,11 @@ export async function crearApp({ logger, pool, reservas, cache, consumidor }) {
     typeDefs,
     resolvers,
     validationRules: [depthLimit(PROFUNDIDAD_MAXIMA)],
-    plugins: [registrarErroresInternos],
+    plugins: [registrarErroresInternos, medirGraphql],
     formatError: ocultarErroresInternos,
   });
   await apollo.start();
+  observarDependencias({ consumidor, cache });
 
   const app = express();
   app.disable('x-powered-by');
@@ -52,9 +108,16 @@ export async function crearApp({ logger, pool, reservas, cache, consumidor }) {
       logger,
       genReqId: traceIdDe,
       customProps: (req) => ({ traceId: req.id }),
-      autoLogging: { ignore: (req) => RUTAS_SIN_LOG.has(req.url) },
+      autoLogging: { ignore: (req) => RUTAS_INTERNAS.has(req.path) },
     }),
   );
+  app.use(medirHttp);
+
+  // Solo red interna: el gateway no lo expone.
+  app.get('/metrics', async (req, res) => {
+    res.set('Content-Type', registro.contentType);
+    res.end(await registro.metrics());
+  });
 
   // Liveness: el proceso responde. No consulta dependencias.
   app.get('/health', (req, res) => {

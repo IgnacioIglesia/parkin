@@ -12,6 +12,7 @@ Alta, edición y baja de cocheras, disponibilidad semanal y búsqueda por radio.
 | `POST /graphql` | API GraphQL (profundidad máxima 5) |
 | `GET /health` | El proceso responde |
 | `GET /ready` | Llega a su base y está consumiendo de RabbitMQ (503 si no). Redis no cuenta |
+| `GET /metrics` | Métricas para Prometheus (solo red interna) |
 
 ## Identidad
 
@@ -44,6 +45,10 @@ Consume de la cola `cocheras.reserva-eventos` (la crea `infra/rabbitmq/definitio
 
 `buscarCocheras` guarda cada resultado 30 s. Cualquier mutación o evento incrementa un número de versión que forma parte de la clave, así que todas las búsquedas viejas quedan invalidadas de una vez. Un resultado calculado sin poder consultar a Reservas no se guarda. Si Redis no responde, la búsqueda va directo a la base.
 
+## Observabilidad
+
+Logs JSON con `traceId`, métricas en `/metrics` y trazas a Jaeger con OpenTelemetry (`src/telemetria.js`). Detalle de cada métrica en `docs/observabilidad.md`.
+
 ## Base de datos
 
 Las migraciones están en `migrations/` y se aplican solas al arrancar, en orden y una sola vez (tabla `schema_migrations`). Para agregar un cambio, crear `002_descripcion.sql`; nunca editar una migración ya aplicada.
@@ -58,6 +63,8 @@ Las migraciones están en `migrations/` y se aplican solas al arrancar, en orden
 | `RESERVAS_URL` | No | `http://reservas:8000` |
 | `PORT` | No | `4000` |
 | `LOG_LEVEL` | No | `info` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | Sin trazas. En Compose: `http://jaeger:4318` |
+| `OTEL_SERVICE_NAME` | No | `cocheras` |
 
 ## Correrlo
 

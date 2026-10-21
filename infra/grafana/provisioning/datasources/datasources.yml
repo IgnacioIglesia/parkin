@@ -1,0 +1,40 @@
+# Fuentes de datos de Grafana, cargadas al arrancar. Los uid son fijos para que el
+# dashboard y los links entre fuentes no dependan de la instalación.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  # Cada traceId que aparece en un log se convierte en un link a su traza en Jaeger.
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      derivedFields:
+        - name: traceId
+          matcherType: regex
+          matcherRegex: '"traceId":\s*"([0-9a-f]{32})"'
+          datasourceUid: jaeger
+          url: "$${__value.raw}"
+          urlDisplayLabel: Ver traza en Jaeger
+
+  # Desde una traza se puede saltar a los logs de todos los servicios con ese traceId.
+  - name: Jaeger
+    uid: jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        customQuery: true
+        query: '{servicio=~".+"} |= "$${__trace.traceId}"'
