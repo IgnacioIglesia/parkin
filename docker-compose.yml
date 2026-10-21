@@ -51,7 +51,6 @@ services:
     restart: unless-stopped
 
   pagos:
-    profiles: ["pendiente"]
     build: ./pagos
     environment:
       PORT: "3000"
