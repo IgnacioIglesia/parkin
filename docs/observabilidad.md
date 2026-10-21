@@ -33,3 +33,20 @@ Prometheus las recoge desde `infra/prometheus/prometheus.yml` y evalúa las aler
 **Trazabilidad.** El gateway genera el `traceId` (header W3C `traceparent`); Reservas lo toma, lo devuelve en el header `X-Trace-Id`, lo escribe en cada log y lo copia al campo `traceId` de cada evento que publica. Para seguir una reserva: buscar su `traceId` en los logs de los servicios. Todavía no se exportan trazas a Jaeger.
 
 **Qué permite detectar.** Un pico de `reservas_conflictos_total` indica competencia por las mismas cocheras; `reservas_outbox_pendientes` creciendo, un problema con RabbitMQ aunque la API siga respondiendo bien; muchas expiraciones, un problema con Pagos.
+
+## Usuarios (implementado)
+
+**Logs.** JSON a stdout (`pino`) con `servicio`, `nivel`, `traceId` (del `traceparent` del gateway) y `usuarioId`; una línea por request con método, ruta, estado y `duracionMs`. No se registran `/health`, `/ready`, `/metrics` ni `/auth/verificar` (los llaman Docker, Prometheus y el gateway en cada request). Contraseñas y tokens se eliminan de cualquier log.
+
+**Métricas.** `GET /metrics`, recogido por Prometheus (job `usuarios`). Interno: el gateway responde 404 en `/api/usuarios/metrics`.
+
+| Métrica | Qué mide |
+|---|---|
+| `usuarios_http_requests_total{metodo,ruta,estado}` | Requests; la ruta es la plantilla (`/users/:id`) |
+| `usuarios_http_request_duration_seconds` | Latencia (histograma, con bucket en 0.8 s) |
+| `usuarios_registros_total` | Cuentas nuevas |
+| `usuarios_logins_total{resultado}` | `ok` o `fallido` |
+| `usuarios_refresh_total{resultado}` | `ok`, `gracia`, `invalido` o `reutilizado` |
+| `usuarios_verificaciones_total{resultado}` | Verificaciones de JWT del gateway: `ok`, `anonimo`, `invalido` |
+
+**Qué permite detectar.** Un pico de `usuarios_logins_total{resultado="fallido"}` indica un ataque de fuerza bruta (además del rate limiting del gateway); cualquier `usuarios_refresh_total{resultado="reutilizado"}` es una sesión posiblemente robada; muchas verificaciones `invalido` apuntan a un front con tokens vencidos que no refresca.
