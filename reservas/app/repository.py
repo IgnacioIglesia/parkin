@@ -6,7 +6,7 @@ from psycopg.rows import dict_row
 from psycopg.types.range import Range
 from psycopg_pool import ConnectionPool
 
-from . import eventos
+from . import eventos, metricas
 
 COLUMNAS = (
     "id, cochera_id, conductor_id, propietario_id, lower(franja) AS desde, "
@@ -59,8 +59,10 @@ def crear_reserva(
                 (reserva_id,),
             )
             eventos.encolar(conn, "reserva.creada", reserva, trace_id)
+        metricas.RESERVAS_CREADAS.inc()
         return reserva, True
     except errors.ExclusionViolation:
+        metricas.CONFLICTOS.inc()
         raise FranjaOcupada()
     except errors.UniqueViolation:
         # Dos requests con la misma clave llegaron a la vez: gana el primero.
@@ -134,6 +136,7 @@ def cancelar_reserva(pool: ConnectionPool, reserva_id: UUID, usuario_id: UUID, t
             (reserva_id, reserva["estado"]),
         )
         eventos.encolar(conn, "reserva.cancelada", actualizada, trace_id, motivo="cancelada_por_usuario")
+    metricas.RESERVAS_CANCELADAS.labels("cancelada_por_usuario").inc()
     return actualizada
 
 

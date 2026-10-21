@@ -20,6 +20,20 @@ Fuente: segunda entrega. **Cualquier cambio acá se hace por PR y se avisa al eq
 | `/api/pagos` | pagos |
 | `/ws` | pagos (Socket.IO, sticky sessions) |
 
+Cómo llegan las rutas a cada servicio (implementado en `gateway/nginx.conf`):
+
+| El cliente llama | El servicio recibe |
+|---|---|
+| `/api/usuarios/auth/login` | `/auth/login` (se quita el prefijo) |
+| `/api/reservas/{id}` | `/reservas/{id}` |
+| `/api/pagos/webhook` | `/pagos/webhook` |
+| `/graphql`, `/ws` | igual |
+
+- El gateway genera el header `traceparent` si el cliente no lo manda, y responde con `X-Trace-Id`.
+- Rate limiting: 10 intentos de login por minuto por IP; 20 requests por segundo por IP en general.
+- `X-User-Id`: el gateway descarta el que mande el cliente. **Pendiente (Romi):** validar el JWT y poner ahí el id del usuario autenticado.
+- `/cocheras/{id}/ocupacion` (Reservas) es interno: Cocheras lo llama directo a `reservas:8000`, no pasa por el gateway.
+
 ## 3. REST: Usuarios (`/api/usuarios`)
 
 | Método | Endpoint | Descripción |

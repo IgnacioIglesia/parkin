@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 from uuid import UUID
@@ -7,18 +8,24 @@ from datetime import datetime
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from . import config, db, eventos, mensajeria, repository
+from . import config, db, eventos, logs, mensajeria, metricas, repository
 from .expiracion import Expirador
 from .schemas import FranjaOcupada, ReservaIn, ReservaOut
 
-logging.basicConfig(level=logging.INFO)
+logs.configurar()
+log = logging.getLogger("reservas.api")
+log_http = logging.getLogger("reservas.http")
+
+SIN_LOG_DE_ACCESO = {"/health", "/ready", "/metrics"}  # los llaman Docker y Prometheus cada pocos segundos
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.pool = db.crear_pool(config.database_url())
     db.migrar(app.state.pool)
+    metricas.medir_outbox(app.state.pool)
     # Sin RABBITMQ_URL el servicio corre sin mensajería (desarrollo y tests).
     url = config.rabbitmq_url()
     app.state.mensajeria = mensajeria.iniciar(app.state.pool, url) if url else []
@@ -35,8 +42,47 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Reservas", lifespan=lifespan)
 
 
-def trace_id(traceparent: Annotated[str | None, Header()] = None) -> str:
-    return eventos.trace_id_de(traceparent)
+@app.middleware("http")
+async def observabilidad(request: Request, call_next):
+    """Fija el traceId del request (el del gateway o uno nuevo), lo devuelve en X-Trace-Id y
+    registra una línea de log y las métricas HTTP de cada request."""
+    trace = eventos.trace_id_de(request.headers.get("traceparent"))
+    request.state.trace_id = trace
+    usuario = _uuid_o_none(request.headers.get("x-user-id"))
+    token_trace = logs.trace_id_var.set(trace)
+    token_usuario = logs.usuario_id_var.set(usuario)
+    inicio = time.perf_counter()
+    estado = 500
+    try:
+        respuesta = await call_next(request)
+        estado = respuesta.status_code
+        respuesta.headers["X-Trace-Id"] = trace
+        return respuesta
+    finally:
+        duracion = time.perf_counter() - inicio
+        ruta_obj = request.scope.get("route")
+        ruta = ruta_obj.path if ruta_obj else "no_encontrada"  # plantilla, para no multiplicar series
+        metricas.SOLICITUDES.labels(request.method, ruta, str(estado)).inc()
+        metricas.LATENCIA.labels(request.method, ruta).observe(duracion)
+        if request.url.path not in SIN_LOG_DE_ACCESO:
+            log_http.info(
+                "%s %s %s", request.method, request.url.path, estado,
+                extra={"metodo": request.method, "ruta": ruta, "estado": estado,
+                       "duracionMs": round(duracion * 1000, 1), "traceId": trace, "usuarioId": usuario},
+            )
+        logs.trace_id_var.reset(token_trace)
+        logs.usuario_id_var.reset(token_usuario)
+
+
+def _uuid_o_none(valor: str | None) -> str | None:
+    try:
+        return str(UUID(valor)) if valor else None
+    except ValueError:
+        return None
+
+
+def trace_id(request: Request) -> str:
+    return request.state.trace_id
 
 
 def usuario_actual(x_user_id: Annotated[str | None, Header()] = None) -> UUID:
@@ -48,6 +94,11 @@ def usuario_actual(x_user_id: Annotated[str | None, Header()] = None) -> UUID:
         return UUID(x_user_id)
     except ValueError:
         raise HTTPException(status_code=401, detail="Usuario inválido")
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health")
@@ -92,10 +143,15 @@ def crear_reserva(
             trace_id=trace,
         )
     except repository.FranjaOcupada:
+        log.info("Franja ocupada", extra={"cocheraId": str(body.cochera_id)})
         raise HTTPException(status_code=409, detail="Esa franja acaba de ser reservada")
     except repository.ClaveDeOtroUsuario:
         raise HTTPException(status_code=409, detail="Idempotency-Key ya utilizada")
-    if not creada:
+    if creada:
+        log.info("Reserva creada", extra={"reservaId": str(reserva["id"]), "cocheraId": str(body.cochera_id)})
+    else:
+        log.info("Idempotency-Key repetida: se devuelve la reserva existente",
+                 extra={"reservaId": str(reserva["id"])})
         response.status_code = 200
     return reserva
 
@@ -127,7 +183,9 @@ def cancelar_reserva(
     trace: Annotated[str, Depends(trace_id)],
 ):
     try:
-        return repository.cancelar_reserva(request.app.state.pool, reserva_id, usuario_id, trace)
+        reserva = repository.cancelar_reserva(request.app.state.pool, reserva_id, usuario_id, trace)
+        log.info("Reserva cancelada", extra={"reservaId": str(reserva_id)})
+        return reserva
     except repository.NoEncontrada:
         raise HTTPException(status_code=404, detail="Reserva no encontrada")
     except repository.NoSePuedeCancelar as e:

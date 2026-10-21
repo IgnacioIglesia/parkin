@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from . import eventos
+from . import eventos, logs, metricas
 from .repository import COLUMNAS
 
 log = logging.getLogger("reservas.procesador")
@@ -20,7 +20,7 @@ class EventoInvalido(Exception):
     pass
 
 
-def procesar_evento(pool: ConnectionPool, evento: dict) -> str:
+def _procesar(pool: ConnectionPool, evento: dict) -> str:
     """Aplica un evento de Pagos. Devuelve 'aplicado', 'duplicado' o 'ignorado'.
 
     Todo ocurre en una sola transacción: registrar el eventId, cambiar el estado, dejar el
@@ -67,3 +67,27 @@ def procesar_evento(pool: ConnectionPool, evento: dict) -> str:
         )
         eventos.encolar(conn, routing_key, reserva, trace_id, motivo)
     return "aplicado"
+
+
+def procesar_evento(pool: ConnectionPool, evento: dict) -> str:
+    """Procesa un evento de Pagos con el traceId y la reserva del evento en los logs."""
+    tipo = evento.get("tipo") if isinstance(evento, dict) else None
+    tipo = tipo if tipo in TRANSICIONES else "desconocido"
+    datos = evento.get("datos") if isinstance(evento, dict) else None
+    reserva_id = datos.get("reservaId") if isinstance(datos, dict) else None
+    trace_id = evento.get("traceId") if isinstance(evento, dict) else None
+
+    with logs.contexto(trace_id=trace_id, reserva_id=str(reserva_id) if reserva_id else None):
+        try:
+            resultado = _procesar(pool, evento)
+        except EventoInvalido:
+            metricas.EVENTOS_PROCESADOS.labels(tipo, "invalido").inc()
+            raise
+        metricas.EVENTOS_PROCESADOS.labels(tipo, resultado).inc()
+        if resultado == "aplicado":
+            if tipo == "pago.aprobado":
+                metricas.RESERVAS_CONFIRMADAS.inc()
+            else:
+                metricas.RESERVAS_CANCELADAS.labels("pago_rechazado").inc()
+        log.info("Evento %s: %s", tipo, resultado, extra={"evento": tipo, "resultado": resultado})
+        return resultado
