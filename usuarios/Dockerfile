@@ -7,6 +7,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY src ./src
+COPY migrations ./migrations
 
 USER node
 EXPOSE 3000
