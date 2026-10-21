@@ -1,4 +1,6 @@
 import { cargarConfig } from './config.js';
+import { cacheNula, crearCache } from './cache.js';
+import { crearConsumidor } from './consumidor.js';
 import { crearPool, migrar } from './db.js';
 import { crearLogger } from './logger.js';
 import { crearApp } from './app.js';
@@ -13,8 +15,15 @@ pool.on('error', (err) => logger.error({ err }, 'error en una conexión ociosa d
 
 await migrar(pool, logger);
 
+const cache = config.redisUrl ? crearCache({ url: config.redisUrl, logger }) : cacheNula;
+if (!config.redisUrl) logger.warn('REDIS_URL no definida: búsquedas sin caché');
+await cache.iniciar();
+
+const consumidor = crearConsumidor({ url: config.rabbitmqUrl, pool, cache, logger });
+await consumidor.iniciar();
+
 const reservas = crearClienteReservas({ baseUrl: config.reservasUrl });
-const { app, apollo } = await crearApp({ logger, pool, reservas });
+const { app, apollo } = await crearApp({ logger, pool, reservas, cache, consumidor });
 
 const server = app.listen(config.puerto, () => {
   logger.info({ puerto: config.puerto }, 'cocheras escuchando');
@@ -28,6 +37,8 @@ async function apagar(senal) {
   logger.info({ senal }, 'apagando cocheras');
   await new Promise((resolve) => server.close(resolve));
   await apollo.stop();
+  await consumidor.detener();
+  await cache.detener();
   await pool.end();
   process.exit(0);
 }

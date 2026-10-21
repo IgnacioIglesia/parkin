@@ -34,7 +34,7 @@ function ocultarErroresInternos(formateado) {
   return { message: 'Error interno', path: formateado.path, extensions: { code: 'INTERNAL_SERVER_ERROR' } };
 }
 
-export async function crearApp({ logger, pool, reservas }) {
+export async function crearApp({ logger, pool, reservas, cache, consumidor }) {
   const apollo = new ApolloServer({
     typeDefs,
     resolvers,
@@ -61,22 +61,26 @@ export async function crearApp({ logger, pool, reservas }) {
     res.json({ status: 'ok' });
   });
 
-  // Readiness: puede atender porque llega a su base.
+  // Readiness: llega a su base y está consumiendo de RabbitMQ (contratos §9).
+  // Redis no cuenta: sin caché el servicio sigue atendiendo.
   app.get('/ready', async (req, res) => {
+    let db = 'ok';
     try {
       await pool.query('SELECT 1');
-      res.json({ status: 'ok', db: 'ok' });
     } catch (err) {
       req.log.warn({ err }, 'base de datos no disponible');
-      res.status(503).json({ status: 'error', db: 'error' });
+      db = 'error';
     }
+    const rabbitmq = consumidor.conectado ? 'ok' : 'error';
+    const listo = db === 'ok' && rabbitmq === 'ok';
+    res.status(listo ? 200 : 503).json({ status: listo ? 'ok' : 'error', db, rabbitmq });
   });
 
   app.use(
     '/graphql',
     express.json(),
     expressMiddleware(apollo, {
-      context: async ({ req }) => crearContexto({ req, pool, reservas }),
+      context: async ({ req }) => crearContexto({ req, pool, reservas, cache }),
     }),
   );
 
