@@ -30,8 +30,26 @@ Cómo llegan las rutas a cada servicio (implementado en `gateway/nginx.conf`):
 | `/graphql`, `/ws` | igual |
 
 - El gateway genera el header `traceparent` si el cliente no lo manda, y responde con `X-Trace-Id`.
+- **CORS:** el gateway responde los preflight (`OPTIONS` → 204) y agrega `Access-Control-Allow-Origin` solo para `https://*.vercel.app` y `localhost`/`127.0.0.1` (cualquier puerto); un origen distinto no recibe el header y el navegador lo bloquea. Métodos permitidos: GET, POST, PATCH, PUT, DELETE. Headers permitidos: `Authorization`, `Content-Type`, `Idempotency-Key`, `traceparent`. Expone `X-Trace-Id`. Los servicios **no deben** mandar sus propios headers de CORS (el gateway los descarta). Para permitir otro dominio, agregar una línea al `map $http_origin` de `gateway/nginx.conf`.
+- `X-Trace-Id` sale una sola vez, con el traceId del `traceparent` (el del cliente o el generado).
 - Rate limiting: 10 intentos de login por minuto por IP; 20 requests por segundo por IP en general.
-- `X-User-Id`: el gateway descarta el que mande el cliente. **Pendiente (Romi):** validar el JWT y poner ahí el id del usuario autenticado.
+- **Autenticación en el gateway** (`gateway/jwt.js`, njs): verifica el JWT localmente (firma RS256 con la clave pública de Usuarios, `exp`, `nbf` y emisor `parkin-usuarios`) sin llamar a Usuarios en cada request. Solo acepta RS256 (rechaza `alg: none` y el cambio de algoritmo). Si es válido, pasa la identidad a los servicios en dos headers; **los servicios deben confiar solo en estos y nunca en lo que mande el cliente**, porque el gateway siempre pisa los que traiga el request:
+  - `X-User-Id`: el `sub` del token (UUID).
+  - `X-User-Roles`: los roles del token, solo `PROPIETARIO` y/o `CONDUCTOR`, separados por coma.
+- **Qué rutas exigen token:**
+
+| Ruta | Token |
+|---|---|
+| `/api/usuarios/auth/*`, `/api/usuarios/.well-known/*` | No (registro, login, refresh) |
+| `/api/usuarios/*` (el resto: perfil, etc.) | Obligatorio |
+| `/api/reservas/*`, `/api/pagos/*` | Obligatorio |
+| `/api/pagos/webhook` | No: lo llama la pasarela y se valida con la firma HMAC |
+| `/graphql` | Opcional: sin token la request es anónima (buscar cocheras); con un token inválido o vencido, 401 |
+| `/ws` | No en el gateway: el token va en el handshake (`auth.token`) y lo valida Pagos |
+
+- **Errores del gateway:** token ausente, inválido o vencido → `401` con `{"codigo":"NO_AUTENTICADO", ...}` y `WWW-Authenticate: Bearer`. Si el gateway no tiene la clave pública → `503` con `{"codigo":"AUTH_NO_DISPONIBLE", ...}` (falla cerrado: no deja pasar a nadie). El front, ante un 401, refresca el token una vez y reintenta.
+- **Clave pública:** el gateway lee `/etc/nginx/jwt_public.pem` (en `docker-compose.yml`, montada desde `infra/jwt/jwt_public.pem`, generada con `infra/jwt/generar-claves.sh`). Solo la pública: la privada no debe estar en el gateway. Si se rotan las claves, hay que reiniciar el gateway.
+- Los servicios igual pueden volver a verificar el token (defensa en profundidad), como hace Usuarios.
 - `/cocheras/{id}/ocupacion` (Reservas) es interno: Cocheras lo llama directo a `reservas:8000`, no pasa por el gateway.
 
 ## 3. REST: Usuarios (`/api/usuarios`)

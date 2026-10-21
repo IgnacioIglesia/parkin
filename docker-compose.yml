@@ -8,6 +8,9 @@
 services:
   gateway:
     build: ./gateway
+    # Solo la clave pública (verifica los JWT). La privada no debe estar en el gateway.
+    # Se genera con infra/jwt/generar-claves.sh.
+    volumes: ["./infra/jwt/jwt_public.pem:/etc/nginx/jwt_public.pem:ro"]
     ports: ["8080:80"]
     restart: unless-stopped
 
