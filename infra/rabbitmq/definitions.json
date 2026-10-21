@@ -1,0 +1,35 @@
+{
+  "exchanges": [
+    { "name": "cocheras.eventos", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
+    { "name": "cocheras.dlx", "vhost": "/", "type": "fanout", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
+  ],
+  "queues": [
+    {
+      "name": "reservas.pago-eventos", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-delivery-limit": 3, "x-dead-letter-exchange": "cocheras.dlx" }
+    },
+    {
+      "name": "pagos.reserva-eventos", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-delivery-limit": 3, "x-dead-letter-exchange": "cocheras.dlx" }
+    },
+    {
+      "name": "cocheras.reserva-eventos", "vhost": "/", "durable": true, "auto_delete": false,
+      "arguments": { "x-queue-type": "quorum", "x-delivery-limit": 3, "x-dead-letter-exchange": "cocheras.dlx" }
+    },
+    { "name": "cocheras.dlq", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {} }
+  ],
+  "bindings": [
+    { "source": "cocheras.eventos", "vhost": "/", "destination": "reservas.pago-eventos", "destination_type": "queue", "routing_key": "pago.aprobado", "arguments": {} },
+    { "source": "cocheras.eventos", "vhost": "/", "destination": "reservas.pago-eventos", "destination_type": "queue", "routing_key": "pago.rechazado", "arguments": {} },
+
+    { "source": "cocheras.eventos", "vhost": "/", "destination": "pagos.reserva-eventos", "destination_type": "queue", "routing_key": "reserva.creada", "arguments": {} },
+    { "source": "cocheras.eventos", "vhost": "/", "destination": "pagos.reserva-eventos", "destination_type": "queue", "routing_key": "reserva.confirmada", "arguments": {} },
+    { "source": "cocheras.eventos", "vhost": "/", "destination": "pagos.reserva-eventos", "destination_type": "queue", "routing_key": "reserva.cancelada", "arguments": {} },
+    { "source": "cocheras.eventos", "vhost": "/", "destination": "pagos.reserva-eventos", "destination_type": "queue", "routing_key": "reserva.expirada", "arguments": {} },
+
+    { "source": "cocheras.eventos", "vhost": "/", "destination": "cocheras.reserva-eventos", "destination_type": "queue", "routing_key": "reserva.confirmada", "arguments": {} },
+    { "source": "cocheras.eventos", "vhost": "/", "destination": "cocheras.reserva-eventos", "destination_type": "queue", "routing_key": "reserva.cancelada", "arguments": {} },
+
+    { "source": "cocheras.dlx", "vhost": "/", "destination": "cocheras.dlq", "destination_type": "queue", "routing_key": "", "arguments": {} }
+  ]
+}

@@ -66,6 +66,10 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management
     ports: ["5672:5672", "15672:15672"]
+    # Exchange, colas y bindings se crean al arrancar (ver docs/contratos.md, sección 7).
+    volumes:
+      - ./infra/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-definitions.conf:ro
+      - ./infra/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
 
   redis:
     image: redis:7

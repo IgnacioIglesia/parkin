@@ -169,7 +169,46 @@ Reglas para todos los consumidores:
 - ACK manual (entrega at-least-once) y prefetch 10.
 - Idempotencia: guardar `eventId` procesado en `evento_procesado` y descartar repetidos.
 
-> El payload de `datos` de cada evento, salvo `pago.aprobado`, queda por completar entre Reservas y Pagos.
+### Payload de `datos` (propuesta de Reservas, a validar con Pagos y Cocheras)
+
+Eventos `reserva.*` (los publica Reservas). Todos llevan la misma foto de la reserva:
+
+```json
+{
+  "reservaId": "…", "cocheraId": "…", "conductorId": "…", "propietarioId": "…",
+  "desde": "2026-10-22T14:00:00+00:00", "hasta": "2026-10-22T16:00:00+00:00",
+  "monto": 180.0, "moneda": "UYU", "estado": "PENDIENTE_PAGO"
+}
+```
+
+- `reserva.creada` agrega `expiraEn` (fin de la retención de 10 minutos).
+- `reserva.cancelada` y `reserva.expirada` agregan `motivo`: `cancelada_por_usuario`, `pago_rechazado` o `plazo_vencido`.
+
+Eventos `pago.*` (los publica Pagos). Reservas solo necesita `reservaId`; el resto es informativo:
+
+```json
+{ "reservaId": "…", "pagoId": "…", "monto": 180.0, "moneda": "UYU" }
+```
+
+`pago.rechazado` puede agregar `motivo`.
+
+### Topología (la crea RabbitMQ al arrancar)
+
+Definida en `infra/rabbitmq/definitions.json`. Los servicios **no declaran** colas: solo consumen de la suya. Si falta una, el consumidor reintenta hasta que exista.
+
+| Cola | Consume | Routing keys |
+|---|---|---|
+| `reservas.pago-eventos` | Reservas | `pago.aprobado`, `pago.rechazado` |
+| `pagos.reserva-eventos` | Pagos | `reserva.creada`, `reserva.confirmada`, `reserva.cancelada`, `reserva.expirada` |
+| `cocheras.reserva-eventos` | Cocheras | `reserva.confirmada`, `reserva.cancelada` |
+| `cocheras.dlq` | nadie (inspección manual) | recibe lo que supera 3 entregas, vía `cocheras.dlx` |
+
+Las tres primeras son *quorum queues* con `x-delivery-limit: 3`. Un consumidor que falla debe hacer `nack` con `requeue=true`; si el mensaje es inválido y nunca se podrá procesar, `nack` con `requeue=false` lo manda directo a la DLQ.
+
+### Garantías de Reservas
+
+- Publica con *outbox transaccional*: el evento se guarda en la misma transacción que el cambio de estado y se envía después con publisher confirms y `mandatory`. Un mismo evento puede publicarse más de una vez.
+- Cada consumidor debe ser idempotente por `eventId` (ver reglas arriba).
 
 ## 8. WebSocket (Pagos, `/ws`)
 
