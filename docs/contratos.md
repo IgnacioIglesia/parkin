@@ -65,7 +65,67 @@ Estados: `PENDIENTE_PAGO` → `CONFIRMADA` | `CANCELADA` | `EXPIRADA`; `CONFIRMA
 | Método | Endpoint | Descripción |
 |---|---|---|
 | POST | `/pagos` | Crea la orden de pago para una reserva y devuelve la URL de checkout |
+| GET | `/pagos/{id}` | Estado de un pago (solo el conductor que lo inició) |
 | POST | `/pagos/webhook` | Resultado de la pasarela (firma verificada; idempotente por `id_externo`) |
+
+**Pagos no consulta a Reservas.** Arma su copia local de la reserva con el evento `reserva.creada` (monto, conductor, `expiraEn`) y la actualiza con `reserva.confirmada`, `reserva.cancelada` y `reserva.expirada`. El cliente no manda el monto: se cobra el que calculó Reservas. Los errores usan el formato común `{ "error": { "codigo", "mensaje", "detalles"? } }`.
+
+### `POST /pagos`
+
+Requiere `Authorization: Bearer <token>` y header `Idempotency-Key` (UUID). Repetir la misma clave devuelve el mismo pago sin crear otro.
+
+```json
+{ "reservaId": "2b9f6c0e-8d1a-4c3e-9f5b-7a1d2e3f4a5b" }
+```
+
+Respuesta `201` (o `200` si la `Idempotency-Key` ya se había usado):
+
+```json
+{
+  "pagoId": "5e2d8a7c-1b3f-4d6e-8a9b-0c1d2e3f4a5b",
+  "reservaId": "2b9f6c0e-8d1a-4c3e-9f5b-7a1d2e3f4a5b",
+  "estado": "PENDIENTE",
+  "monto": 180.0,
+  "moneda": "UYU",
+  "checkoutUrl": "http://localhost:8090/checkout/mock-5e2d8a7c"
+}
+```
+
+| Código | `codigo` | Cuándo |
+|---|---|---|
+| 401 | `NO_AUTENTICADO` / `TOKEN_INVALIDO` | Falta el token, o es inválido o está vencido |
+| 403 | `NO_ES_TU_RESERVA` | El `sub` del token no es el `conductorId` de la reserva |
+| 404 | `RESERVA_DESCONOCIDA` | Pagos todavía no recibió `reserva.creada`; el front reintenta en 1-2 s |
+| 409 | `RESERVA_NO_PAGABLE` | La reserva ya no está en `PENDIENTE_PAGO` o pasó `expiraEn` |
+| 409 | `PAGO_EN_CURSO` | Ya hay un pago pendiente o aprobado para esa reserva |
+| 422 | `DATOS_INVALIDOS` | Falta `reservaId` o `Idempotency-Key`, o no son UUID |
+
+### `GET /pagos/{id}`
+
+Devuelve el mismo cuerpo que `POST /pagos`, con `estado` en `PENDIENTE`, `APROBADO` o `RECHAZADO`; si está rechazado agrega `motivo`. `403` si el pago es de otro usuario, `404` si no existe.
+
+### `POST /pagos/webhook` (lo llama la pasarela, no el front)
+
+No lleva JWT: el gateway no debe exigirlo en esta ruta. La pasarela firma el cuerpo crudo con HMAC-SHA256 usando `PASARELA_WEBHOOK_SECRET` y manda la firma en hex en el header `X-Firma`.
+
+```json
+{
+  "idExterno": "mock-5e2d8a7c",
+  "referencia": "5e2d8a7c-1b3f-4d6e-8a9b-0c1d2e3f4a5b",
+  "estado": "approved",
+  "motivo": null,
+  "monto": 180.0,
+  "moneda": "UYU"
+}
+```
+
+- `referencia` es el `pagoId`. `estado` es `approved` o `rejected`; si es `rejected`, `motivo` explica por qué (por ejemplo, `fondos_insuficientes`).
+- `200` si la firma es válida, aunque sea un aviso repetido, para que la pasarela no reintente. Solo el primer aviso por `idExterno` cambia el estado y publica `pago.aprobado` o `pago.rechazado`.
+- `401` si la firma no coincide; `422` si el cuerpo no tiene el formato esperado.
+
+### Pasarela simulada (demo)
+
+Contenedor `pasarela-mock` (puerto 8090) que imita a Mercado Pago. La `checkoutUrl` abre una página con los botones **Aprobar** y **Rechazar**; al elegir, la pasarela llama al webhook. Para pruebas automáticas: `POST /checkout/{idExterno}/resultado` con `{ "estado": "approved" | "rejected" }`.
 
 ## 6. GraphQL: Cocheras (`/graphql`)
 
@@ -185,7 +245,7 @@ Reglas para todos los consumidores:
 - ACK manual (entrega at-least-once) y prefetch 10.
 - Idempotencia: guardar `eventId` procesado en `evento_procesado` y descartar repetidos.
 
-### Payload de `datos` (propuesta de Reservas, a validar con Pagos y Cocheras)
+### Payload de `datos` (propuesta de Reservas; Pagos de acuerdo, falta Cocheras)
 
 Eventos `reserva.*` (los publica Reservas). Todos llevan la misma foto de la reserva:
 
@@ -206,7 +266,7 @@ Eventos `pago.*` (los publica Pagos). Reservas solo necesita `reservaId`; el res
 { "reservaId": "…", "pagoId": "…", "monto": 180.0, "moneda": "UYU" }
 ```
 
-`pago.rechazado` puede agregar `motivo`.
+`pago.rechazado` agrega `motivo` con lo que informó la pasarela (por ejemplo, `fondos_insuficientes`).
 
 ### Topología (la crea RabbitMQ al arrancar)
 
@@ -231,6 +291,27 @@ Las tres primeras son *quorum queues* con `x-delivery-limit: 3`. Un consumidor q
 - El cliente se conecta con su JWT en el handshake y entra a la sala `user:{id}`.
 - Eventos hacia el cliente: `reserva:confirmada`, `reserva:cancelada`, `reserva:expirada`, `pago:rechazado`.
 - Si el cliente está desconectado no pierde nada: consulta `GET /reservas/{id}`.
+
+Conexión desde el front (Socket.IO v4):
+
+```js
+import { io } from 'socket.io-client';
+
+const socket = io(GATEWAY_URL, { path: '/ws', auth: { token: accessToken } });
+socket.on('connect_error', (err) => { /* err.message === 'TOKEN_INVALIDO' → refrescar el token y reconectar */ });
+socket.on('reserva:confirmada', (datos) => { /* ... */ });
+```
+
+| Evento | Lo dispara | Destinatarios | Payload |
+|---|---|---|---|
+| `reserva:confirmada` | `reserva.confirmada` | conductor y propietario | `{ reservaId, cocheraId, desde, hasta }` |
+| `reserva:cancelada` | `reserva.cancelada` | conductor y propietario | `{ reservaId, cocheraId, motivo }` |
+| `reserva:expirada` | `reserva.expirada` | conductor | `{ reservaId, cocheraId, motivo }` |
+| `pago:rechazado` | `pago.rechazado` | conductor | `{ reservaId, pagoId, motivo }` |
+
+- `motivo` usa los mismos valores que los eventos de Reservas (`cancelada_por_usuario`, `pago_rechazado`, `plazo_vencido`) y, en `pago:rechazado`, el de la pasarela.
+- Los avisos son *best effort*: si uno se pierde, la fuente de verdad sigue siendo `GET /reservas/{id}`.
+- Con varias réplicas de Pagos, el adaptador Redis de Socket.IO entrega el aviso sin importar a qué réplica esté conectado el cliente.
 
 ## 9. Convenciones comunes
 
