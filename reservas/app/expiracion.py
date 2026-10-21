@@ -5,7 +5,7 @@ import uuid
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from . import eventos
+from . import eventos, metricas
 from .repository import COLUMNAS
 
 log = logging.getLogger("reservas.expiracion")
@@ -47,6 +47,7 @@ def _expirar_lote(pool: ConnectionPool) -> int:
                 (reserva["id"],),
             )
             eventos.encolar(conn, "reserva.expirada", reserva, uuid.uuid4().hex, motivo="plazo_vencido")
+    metricas.RESERVAS_EXPIRADAS.inc(len(reservas))
     return len(reservas)
 
 

@@ -135,7 +135,9 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.53.0
-    volumes: ["./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alertas.yml:/etc/prometheus/alertas.yml:ro
     ports: ["9090:9090"]
 
   loki:

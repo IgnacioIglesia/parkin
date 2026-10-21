@@ -5,6 +5,7 @@ import threading
 import pika
 from psycopg_pool import ConnectionPool
 
+from . import metricas
 from .outbox import drenar
 from .procesador import EventoInvalido, procesar_evento
 
@@ -50,6 +51,7 @@ class Publicador(threading.Thread):
                             ),
                             mandatory=True,
                         )
+                        metricas.EVENTOS_PUBLICADOS.labels(routing_key).inc()
 
                     while not self._detener.is_set():
                         if drenar(self.pool, publicar) == 0:
