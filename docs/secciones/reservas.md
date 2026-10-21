@@ -77,7 +77,15 @@ Las redes reintentan: el conductor puede tocar dos veces "Reservar", o la app re
 
 ## 6. Comunicación entre servicios
 
-### 6.1 Eventos
+### 6.1 Consulta síncrona a Cocheras
+
+Para crear una reserva, Reservas necesita dos datos que **no** puede aceptar del cliente: el propietario y el precio. Los pide a Cocheras con una query GraphQL (`cochera(id) { propietario { id } precioHora }`) y calcula el monto como `precioHora × horas de la franja`. Es una llamada síncrona porque el conductor espera la respuesta y la reserva no puede crearse sin esos datos; por eso tiene timeout de 3 segundos.
+
+- Si la cochera no existe, responde `404`; si Cocheras no responde o devuelve un error, `503` y no se crea nada.
+- Un reintento con la misma `Idempotency-Key` no consulta a Cocheras, así que sigue funcionando aunque esté caída.
+- Hay una dependencia en las dos direcciones: Cocheras consulta la ocupación a Reservas (y tolera que falle, devolviendo la búsqueda sin filtrar), mientras que Reservas **no** puede crear reservas sin Cocheras.
+
+### 6.2 Eventos
 
 Reservas publica y consume eventos en el exchange `topic` `cocheras.eventos`.
 
@@ -92,7 +100,7 @@ Reservas publica y consume eventos en el exchange `topic` `cocheras.eventos`.
 
 El formato de cada mensaje y su payload están en [`contratos.md`](../contratos.md).
 
-### 6.2 Outbox transaccional
+### 6.3 Outbox transaccional
 
 **El problema.** Si el servicio guarda la reserva en la base y después publica en RabbitMQ, un fallo entre los dos pasos deja un estado inconsistente: una reserva sin evento (Pagos nunca cobra) o un evento de una transacción que se revirtió.
 
@@ -114,7 +122,7 @@ flowchart LR
 - Con varias réplicas, `SELECT … FOR UPDATE SKIP LOCKED` evita que dos publicadores tomen el mismo evento.
 - La entrega es *at-least-once*: un evento puede publicarse más de una vez, por eso todos los consumidores son idempotentes.
 
-### 6.3 Consumo idempotente
+### 6.4 Consumo idempotente
 
 Al recibir `pago.aprobado` o `pago.rechazado`, el consumidor hace en **una sola transacción**: registrar el `eventId` en `evento_procesado`, cambiar el estado, anotar el historial y encolar el evento de salida. Si el `eventId` ya estaba registrado, el mensaje se descarta. Si algo falla, nada queda a medias y el reintento vuelve a procesarlo completo.
 
@@ -169,8 +177,8 @@ Para ser honestos en la defensa, esto es lo que hoy **no** está resuelto o veri
 | Tema | Estado |
 |---|---|
 | Identidad del usuario | Se lee del header `X-User-Id`, que debería poner el gateway tras validar el JWT. Falta confirmarlo con el responsable del gateway |
-| Propietario y monto | Hoy los manda el cliente en el body del `POST`. Es provisorio: deben obtenerse de Cocheras, porque el cliente no debe poder fijar el precio |
 | Política de cancelación | Se puede cancelar mientras la reserva esté activa y no haya comenzado; no hay plazos ni reembolsos |
+| Dependencia de Cocheras | Sin Cocheras no se pueden crear reservas (`503`). No hay caché ni valores por defecto a propósito: el precio debe ser el vigente |
 | Pago tardío | Si llega `pago.aprobado` y la reserva ya estaba cancelada o expirada, se ignora con un aviso en el log, pero el cobro ya se hizo. Falta definir quién reembolsa |
 | `FINALIZADA` | No hay proceso que finalice reservas |
 | RabbitMQ y Docker | La lógica de mensajería está probada con la base real, pero la conexión con un broker real y la topología (`definitions.json`, DLQ) no se probaron todavía |

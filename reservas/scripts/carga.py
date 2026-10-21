@@ -7,6 +7,13 @@
 Lanza muchos requests a la vez (todos arrancan juntos) y comprueba que la base respete la
 regla central: nunca hay dos reservas activas solapadas en la misma cochera. No necesita
 dependencias. Termina con código 1 si alguna verificación falla.
+
+Reservas consulta a Cocheras el propietario y el precio de cada cochera, así que Cocheras debe
+estar accesible. Los escenarios usan cocheras inventadas: para eso, en otra terminal, levantar
+el Cocheras de mentira (responde cualquier id) y arrancar Reservas apuntando a él:
+
+    python3 scripts/cocheras_falso.py                        # escucha en :4000
+    COCHERAS_URL=http://localhost:4000 ... uvicorn app.main:app
 """
 import argparse
 import http.client
@@ -56,8 +63,7 @@ class Cliente:
 
     def reservar(self, cochera, desde, hasta, usuario=None, clave=None):
         cuerpo = {
-            "cochera_id": str(cochera), "propietario_id": str(uuid.uuid4()), "monto": 180,
-            "desde": iso(desde), "hasta": iso(hasta),
+            "cochera_id": str(cochera), "desde": iso(desde), "hasta": iso(hasta),
         }
         return self.pedir("POST", "/reservas", cuerpo, usuario or uuid.uuid4(), clave or str(uuid.uuid4()))
 

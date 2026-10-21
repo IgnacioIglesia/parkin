@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Res
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from . import config, db, eventos, logs, mensajeria, metricas, repository
+from . import cocheras, config, db, eventos, logs, mensajeria, metricas, repository
 from .expiracion import Expirador
 from .schemas import FranjaOcupada, ReservaIn, ReservaOut
 
@@ -26,6 +26,7 @@ async def lifespan(app: FastAPI):
     app.state.pool = db.crear_pool(config.database_url())
     db.migrar(app.state.pool)
     metricas.medir_outbox(app.state.pool)
+    app.state.cocheras = cocheras.ClienteCocheras(config.cocheras_url())
     # Sin RABBITMQ_URL el servicio corre sin mensajería (desarrollo y tests).
     url = config.rabbitmq_url()
     app.state.mensajeria = mensajeria.iniciar(app.state.pool, url) if url else []
@@ -36,6 +37,7 @@ async def lifespan(app: FastAPI):
     app.state.expirador.detener()
     app.state.expirador.join(timeout=5)
     mensajeria.detener(app.state.mensajeria)
+    app.state.cocheras.cerrar()
     app.state.pool.close()
 
 
@@ -129,19 +131,31 @@ def crear_reserva(
 ):
     if not idempotency_key:
         raise HTTPException(status_code=422, detail="Falta el header Idempotency-Key")
+    pool = request.app.state.pool
     try:
-        reserva, creada = repository.crear_reserva(
-            request.app.state.pool,
-            conductor_id=conductor_id,
-            cochera_id=body.cochera_id,
-            propietario_id=body.propietario_id,
-            desde=body.desde,
-            hasta=body.hasta,
-            monto=body.monto,
-            idempotency_key=idempotency_key,
-            retencion_minutos=config.retencion_minutos(),
-            trace_id=trace,
-        )
+        # Un reintento con la misma clave devuelve la reserva ya creada sin consultar a
+        # Cocheras: sigue funcionando aunque Cocheras esté caída.
+        reserva = repository.reserva_por_clave(pool, idempotency_key, conductor_id)
+        creada = reserva is None
+        if creada:
+            try:
+                propietario_id, precio_hora = request.app.state.cocheras.cochera(body.cochera_id, trace)
+            except cocheras.CocheraNoEncontrada:
+                raise HTTPException(status_code=404, detail="Cochera no encontrada")
+            except cocheras.CocherasNoDisponible:
+                raise HTTPException(status_code=503, detail="No se pudo consultar Cocheras, probá de nuevo")
+            reserva, creada = repository.crear_reserva(
+                pool,
+                conductor_id=conductor_id,
+                cochera_id=body.cochera_id,
+                propietario_id=propietario_id,
+                desde=body.desde,
+                hasta=body.hasta,
+                monto=cocheras.calcular_monto(precio_hora, body.desde, body.hasta),
+                idempotency_key=idempotency_key,
+                retencion_minutos=config.retencion_minutos(),
+                trace_id=trace,
+            )
     except repository.FranjaOcupada:
         log.info("Franja ocupada", extra={"cocheraId": str(body.cochera_id)})
         raise HTTPException(status_code=409, detail="Esa franja acaba de ser reservada")

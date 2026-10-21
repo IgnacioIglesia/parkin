@@ -5,11 +5,8 @@ from pydantic import BaseModel, model_validator
 
 
 class ReservaIn(BaseModel):
+    # El propietario y el monto no los manda el cliente: Reservas los obtiene de Cocheras.
     cochera_id: UUID
-    # Provisorio: cuando Cocheras exponga su API, propietario y monto se obtienen de ahí
-    # en lugar de confiar en el cliente.
-    propietario_id: UUID
-    monto: float
     desde: datetime
     hasta: datetime
 
@@ -19,8 +16,6 @@ class ReservaIn(BaseModel):
             raise ValueError("desde y hasta deben incluir zona horaria")
         if self.hasta <= self.desde:
             raise ValueError("hasta debe ser posterior a desde")
-        if self.monto < 0:
-            raise ValueError("monto no puede ser negativo")
         return self
 
 
