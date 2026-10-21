@@ -14,14 +14,6 @@ services:
   #     JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_key
   #   depends_on: [db-usuarios]
   #
-  # cocheras:
-  #   build: ./cocheras
-  #   environment:
-  #     DATABASE_URL: postgres://app:app@db-cocheras:5432/cocheras
-  #     REDIS_URL: redis://redis:6379
-  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
-  #   depends_on: [db-cocheras, redis, rabbitmq]
-  #
   # reservas:
   #   build: ./reservas
   #   environment:
@@ -38,6 +30,15 @@ services:
   #     REDIS_URL: redis://redis:6379
   #     PASARELA_ACCESS_TOKEN: ${PASARELA_ACCESS_TOKEN}
   #   depends_on: [db-pagos, rabbitmq, redis]
+
+  cocheras:
+    build: ./cocheras
+    environment:
+      DATABASE_URL: postgres://app:app@db-cocheras:5432/cocheras
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    ports: ["4000:4000"]
+    depends_on: [db-cocheras, redis, rabbitmq]
 
   db-usuarios:
     image: postgres:16

@@ -1,0 +1,71 @@
+# Copia del esquema de docs/contratos.md §6. Si cambia el contrato, cambia acá.
+
+type Cochera {
+  id: ID!
+  titulo: String!
+  precioHora: Float!
+  tipoVehiculo: TipoVehiculo!
+  ubicacionAproximada: Punto!
+  direccionExacta: String   # solo con reserva confirmada
+  fotos: [String!]!
+  propietario: Propietario!
+  disponibilidad: [Franja!]!
+}
+
+type Query {
+  buscarCocheras(cerca: PuntoInput!, radioMetros: Int!, desde: String!, hasta: String!, tipo: TipoVehiculo): [Cochera!]!
+  cochera(id: ID!): Cochera
+  misCocheras: [Cochera!]!
+}
+
+type Mutation {
+  crearCochera(input: CocheraInput!): Cochera!
+  actualizarCochera(id: ID!, input: CocheraInput!): Cochera!
+  definirDisponibilidad(id: ID!, franjas: [FranjaInput!]!): Cochera!
+  eliminarCochera(id: ID!): Boolean!
+}
+
+"Coordenadas WGS84 en grados decimales"
+type Punto {
+  lat: Float!
+  lng: Float!
+}
+
+input PuntoInput {
+  lat: Float!
+  lng: Float!
+}
+
+"Tamaño máximo de vehículo que admite la cochera: MOTO < AUTO < CAMIONETA"
+enum TipoVehiculo {
+  MOTO
+  AUTO
+  CAMIONETA
+}
+
+"Franja semanal en hora de Montevideo. diaSemana: 1 = lunes ... 7 = domingo"
+type Franja {
+  diaSemana: Int!
+  horaDesde: String!   # "HH:MM"
+  horaHasta: String!   # "HH:MM"; "24:00" = fin del día
+}
+
+input FranjaInput {
+  diaSemana: Int!
+  horaDesde: String!
+  horaHasta: String!
+}
+
+"Solo el id: los datos del usuario viven en Usuarios (database per service)"
+type Propietario {
+  id: ID!
+}
+
+input CocheraInput {
+  titulo: String!
+  precioHora: Float!          # en UYU
+  tipoVehiculo: TipoVehiculo!
+  direccionExacta: String!
+  ubicacion: PuntoInput!      # ubicación exacta; la aproximada la calcula el servicio
+  fotos: [String!]            # URLs de las fotos ya subidas
+}
