@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+
+# Descomentar cada servicio cuando exponga /metrics.
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+  # - job_name: usuarios
+  #   static_configs: [{ targets: ["usuarios:3000"] }]
+  # - job_name: cocheras
+  #   static_configs: [{ targets: ["cocheras:4000"] }]
+  # - job_name: reservas
+  #   static_configs: [{ targets: ["reservas:8000"] }]
+  # - job_name: pagos
+  #   static_configs: [{ targets: ["pagos:3000"] }]

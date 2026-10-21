@@ -1,38 +1,96 @@
-# Infraestructura local. Los servicios se agregan acá cuando tengan Dockerfile.
+# Entorno local. Las credenciales son solo para desarrollo.
+# Los servicios de aplicación se descomentan cuando tengan su Dockerfile.
 services:
-  postgres:
+  # gateway:
+  #   image: nginx:1.27
+  #   ports: ["8080:80"]
+  #   volumes: ["./gateway/nginx.conf:/etc/nginx/nginx.conf:ro"]
+  #   depends_on: [usuarios, cocheras, reservas, pagos]
+  #
+  # usuarios:
+  #   build: ./usuarios
+  #   environment:
+  #     DATABASE_URL: postgres://app:app@db-usuarios:5432/usuarios
+  #     JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_key
+  #   depends_on: [db-usuarios]
+  #
+  # cocheras:
+  #   build: ./cocheras
+  #   environment:
+  #     DATABASE_URL: postgres://app:app@db-cocheras:5432/cocheras
+  #     REDIS_URL: redis://redis:6379
+  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+  #   depends_on: [db-cocheras, redis, rabbitmq]
+  #
+  # reservas:
+  #   build: ./reservas
+  #   environment:
+  #     DATABASE_URL: postgres://app:app@db-reservas:5432/reservas
+  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+  #     RETENCION_MINUTOS: "10"
+  #   depends_on: [db-reservas, rabbitmq]
+  #
+  # pagos:
+  #   build: ./pagos
+  #   environment:
+  #     DATABASE_URL: postgres://app:app@db-pagos:5432/pagos
+  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+  #     REDIS_URL: redis://redis:6379
+  #     PASARELA_ACCESS_TOKEN: ${PASARELA_ACCESS_TOKEN}
+  #   depends_on: [db-pagos, rabbitmq, redis]
+
+  db-usuarios:
     image: postgres:16
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      USUARIOS_DB: ${USUARIOS_DB}
-      COCHERAS_DB: ${COCHERAS_DB}
-      RESERVAS_DB: ${RESERVAS_DB}
-      PAGOS_DB: ${PAGOS_DB}
-    ports:
-      - "${POSTGRES_PORT}:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/init.sh:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+    environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: usuarios }
+    ports: ["5441:5432"]
+    volumes: ["pg-usuarios:/var/lib/postgresql/data"]
+
+  db-cocheras:
+    image: postgis/postgis:16-3.4
+    environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: cocheras }
+    ports: ["5442:5432"]
+    volumes: ["pg-cocheras:/var/lib/postgresql/data"]
+
+  db-reservas:
+    image: postgres:16
+    environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: reservas }
+    ports: ["5443:5432"]
+    volumes: ["pg-reservas:/var/lib/postgresql/data"]
+
+  db-pagos:
+    image: postgres:16
+    environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: pagos }
+    ports: ["5444:5432"]
+    volumes: ["pg-pagos:/var/lib/postgresql/data"]
 
   rabbitmq:
-    image: rabbitmq:3-management
-    environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
-    ports:
-      - "${RABBITMQ_PORT}:5672"
-      - "15672:15672"
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+    image: rabbitmq:3.13-management
+    ports: ["5672:5672", "15672:15672"]
+
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes: ["./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+
+  loki:
+    image: grafana/loki:3.1.0
+    ports: ["3100:3100"]
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.58
+    ports: ["16686:16686", "4318:4318"]
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports: ["3000:3000"]
+    depends_on: [prometheus, loki, jaeger]
 
 volumes:
-  pgdata:
+  pg-usuarios:
+  pg-cocheras:
+  pg-reservas:
+  pg-pagos:

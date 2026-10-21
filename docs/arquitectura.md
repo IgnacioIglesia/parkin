@@ -1,47 +1,52 @@
 # Arquitectura
 
-Microservicios, elegidos por flexibilidad, escalabilidad y mantenibilidad: cada módulo tiene una responsabilidad y evoluciona de forma independiente.
+Fuente: segunda entrega. Microservicios orientados a eventos con API Gateway, RabbitMQ y una base PostgreSQL por servicio (database per service: sin JOINs ni claves foráneas entre servicios; las referencias son IDs).
 
-## Diagrama (borrador)
+## Servicios
+
+| Carpeta | Stack | Responsable |
+|---|---|---|
+| `gateway/` | NGINX | Romina |
+| `usuarios/` | Node.js + Express, PostgreSQL, bcrypt, JWT RS256 | Martina |
+| `cocheras/` | Node.js + Apollo (GraphQL), PostgreSQL + PostGIS, Redis | Diego |
+| `reservas/` | Python 3.12 + FastAPI, PostgreSQL | Ignacio |
+| `pagos/` | Node.js, Socket.IO (adaptador Redis), pasarela externa | Romina |
+| `web/` | Cliente web (Vercel) | Martina |
+
+Infra en `docker-compose.yml`: 4 Postgres, RabbitMQ, Redis, Prometheus, Loki, Jaeger, Grafana.
+
+## Diagrama
 
 ```mermaid
 flowchart LR
-    Web[Cliente web / móvil] --> GW[API Gateway]
-    GW --> U[Usuarios]
-    GW --> C[Cocheras]
-    GW --> R[Reservas]
-    R -- REST: validar cochera --> C
-    R -- evento reserva.creada --> MQ[(RabbitMQ)]
-    MQ --> P[Pagos y Notificaciones]
-    P -- evento pago.confirmado / pago.fallido --> MQ
-    MQ --> R
-    U --- DBU[(Postgres usuarios)]
-    C --- DBC[(Postgres cocheras)]
-    R --- DBR[(Postgres reservas)]
-    P --- DBP[(Postgres pagos)]
+    Cliente --> GW[Gateway NGINX]
+    GW -->|REST| U[Usuarios]
+    GW -->|GraphQL| C[Cocheras]
+    GW -->|REST| R[Reservas]
+    GW -->|REST + WS| P[Pagos y Notificaciones]
+    R <-->|eventos| MQ[(RabbitMQ)]
+    P <-->|eventos| MQ
+    MQ -->|reserva.confirmada / cancelada| C
+    C --- Redis[(Redis)]
+    P --- Redis
+    P -->|cobro / webhook| Pasarela[Pasarela externa]
+    U --- DBU[(db_usuarios)]
+    C --- DBC[(db_cocheras PostGIS)]
+    R --- DBR[(db_reservas)]
+    P --- DBP[(db_pagos)]
 ```
 
-> Pendiente de decidir: si hay API Gateway o los clientes hablan directo con cada servicio.
+## Comunicación
 
-## Comunicación (mínimo 2 formas, ver letra §5)
+| Interacción | Mecanismo |
+|---|---|
+| Cliente → Usuarios, Reservas, Pagos | REST sobre HTTPS |
+| Cliente → Cocheras | GraphQL |
+| Reservas ↔ Pagos ↔ Cocheras | RabbitMQ (exchange topic `cocheras.eventos`) |
+| Servidor → cliente | WebSocket (Socket.IO) |
 
-| Mecanismo | Uso | Justificación |
-|---|---|---|
-| API REST (síncrona) | Cliente → servicios; Reservas → Cocheras (consulta de disponibilidad/precio) | Necesitan respuesta inmediata |
-| Mensajería asíncrona (RabbitMQ) | Reservas ↔ Pagos y Notificaciones | Desacopla el cobro, tolera caídas, permite reintentos |
+El detalle de endpoints, eventos y esquema está en [`contratos.md`](contratos.md).
 
-## Flujo principal: reservar y pagar
+## Concurrencia
 
-1. Conductor busca cocheras (Cocheras) y elige una franja.
-2. Reservas crea la reserva en estado `PENDIENTE_PAGO` y bloquea la franja (ver concurrencia abajo).
-3. Reservas publica `reserva.creada`.
-4. Pagos procesa el cobro y publica `pago.confirmado` o `pago.fallido`.
-5. Reservas pasa a `CONFIRMADA` (o libera la franja si falló o expiró) y Notificaciones avisa a conductor y propietario.
-
-## Concurrencia (doble reserva)
-
-Propuesta: en la base de Reservas, un *exclusion constraint* de Postgres sobre `(cochera_id, tstzrange(inicio, fin))` con `btree_gist` hace imposible solapar reservas activas aunque dos requests lleguen a la vez. La extensión ya se habilita en `infra/postgres/init.sh`. Registrar la decisión final en un ADR.
-
-## Tecnologías
-
-Por definir. Dejar acá el stack elegido y sus motivos (lenguaje/framework, Postgres, RabbitMQ) y registrar la decisión en `docs/decisiones/`.
+La regla "sin reservas solapadas" vive en la base de Reservas: restricción de exclusión `gist` sobre `(cochera_id, franja)` para estados activos. Retención de 10 minutos, idempotencia con `Idempotency-Key`, control optimista con `version` y saga coreografiada con compensación. Ver la sección 7 de la segunda entrega.

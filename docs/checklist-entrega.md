@@ -12,7 +12,7 @@ Entrega: **15/11/2026 23:59** (documento + zip o GitHub). Defensa oral la semana
   - [ ] Alta y gestión de cocheras
   - [ ] Búsqueda y reserva por franja
   - [ ] Pago y notificación
-- [ ] 5. **Mínimo 2 formas de comunicación** (REST + RabbitMQ) con justificación
+- [ ] 5. **Mínimo 2 formas de comunicación** (REST, GraphQL, RabbitMQ y WebSocket) con justificación → [`contratos.md`](contratos.md)
 - [ ] 6. Persistencia (Postgres)
 - [ ] 7. 12-Factor → [`12-factor.md`](12-factor.md)
 - [ ] 8. Observabilidad (≥ 1 pilar) → [`observabilidad.md`](observabilidad.md)
