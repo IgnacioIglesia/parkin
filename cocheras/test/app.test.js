@@ -6,15 +6,17 @@ import { crearLogger } from '../src/logger.js';
 import { traceIdDe } from '../src/traza.js';
 
 const logger = crearLogger('silent');
-const poolSano = { query: async () => ({ rows: [{ '?column?': 1 }] }) };
+const poolSano = { query: async () => ({ rows: [] }) };
 const poolCaido = {
   query: async () => {
     throw new Error('connection refused');
   },
 };
 
-const { app, apollo } = await crearApp({ logger, pool: poolSano });
-const caida = await crearApp({ logger, pool: poolCaido });
+const reservas = { ocupacion: async () => [] };
+
+const { app, apollo } = await crearApp({ logger, pool: poolSano, reservas });
+const caida = await crearApp({ logger, pool: poolCaido, reservas });
 
 after(async () => {
   await apollo.stop();
@@ -42,9 +44,22 @@ test('GET /ready responde 503 si no llega a la base', async () => {
 test('POST /graphql resuelve misCocheras', async () => {
   const res = await request(app)
     .post('/graphql')
+    .set('X-User-Id', '11111111-1111-4111-8111-111111111111')
+    .set('X-User-Roles', 'PROPIETARIO')
     .send({ query: '{ misCocheras { id titulo ubicacionAproximada { lat lng } } }' });
   assert.equal(res.status, 200);
   assert.deepEqual(res.body.data, { misCocheras: [] });
+});
+
+test('un error interno no expone detalles al cliente', async () => {
+  const res = await request(caida.app)
+    .post('/graphql')
+    .set('X-User-Id', '11111111-1111-4111-8111-111111111111')
+    .set('X-User-Roles', 'PROPIETARIO')
+    .send({ query: '{ misCocheras { id } }' });
+  assert.equal(res.body.errors[0].message, 'Error interno');
+  assert.equal(res.body.errors[0].extensions.code, 'INTERNAL_SERVER_ERROR');
+  assert.ok(!JSON.stringify(res.body).includes('connection refused'));
 });
 
 test('POST /graphql rechaza queries con profundidad mayor a 5', async () => {
