@@ -80,7 +80,7 @@ El NGINX de código abierto no valida JWT por sí mismo (eso viene en NGINX Plus
 - Contraseñas con bcrypt; nunca se guardan ni se registran en texto plano.
 - El login compara contra un hash ficticio cuando el email no existe: tarda lo mismo y no permite averiguar qué emails están registrados.
 - El gateway limita el login a 10 intentos por minuto por IP.
-- Las claves se generan con `infra/jwt/generar-claves.sh` y no se commitean (`*.pem` en `.gitignore`).
+- Las claves las genera el servicio `jwt-claves` del compose la primera vez que se levanta (si ya existen no las toca, para no invalidar las sesiones) y no se commitean (`*.pem` en `.gitignore`).
 - `/metrics` es interno: el gateway responde `404` en `/api/usuarios/metrics`.
 
 ## 7. Observabilidad
@@ -106,4 +106,3 @@ El NGINX de código abierto no valida JWT por sí mismo (eso viene en NGINX Plus
 
 - La configuración del gateway con `auth_request` está probada y documentada en `usuarios/README.md`; la integra Romina en `gateway/nginx.conf`.
 - `docs/contratos.md` §3 lista cinco endpoints; los demás de la sección 2 se proponen al contrato por PR.
-- Antes del primer `docker compose up` hay que correr una vez `bash infra/jwt/generar-claves.sh`.

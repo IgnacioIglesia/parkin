@@ -1,14 +1,26 @@
 import { pedir } from './http.js';
 
-// POST /api/pagos crea la orden en la pasarela y devuelve la URL de checkout (contrato §5).
-// Pagos exige una Idempotency-Key por intento: repetirla devuelve el mismo pago. Si el usuario
-// vuelve a tocar "Pagar" con otra clave mientras hay un pago pendiente, Pagos devuelve ese mismo
-// pago, así que la URL de checkout se recupera.
-export async function iniciarPago(reservaId, idempotencyKey = crypto.randomUUID()) {
-  const orden = await pedir('/api/pagos', {
-    method: 'POST',
-    cuerpo: { reservaId },
-    headers: { 'Idempotency-Key': idempotencyKey },
-  });
-  return orden?.checkoutUrl ?? null;
+const esperar = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
+
+// POST /api/pagos { reservaId } con Idempotency-Key (contrato §5): crea la orden en la pasarela
+// y devuelve el pago con su checkoutUrl. La clave la genera quien llama, una por intento de
+// pago, y se reusa en los reintentos: repetirla devuelve el mismo pago sin cobrar dos veces.
+//
+// Pagos arma su copia de la reserva con el evento reserva.creada; si todavía no le llegó,
+// responde 404 RESERVA_DESCONOCIDA y hay que reintentar en unos segundos.
+export async function iniciarPago(reservaId, idempotencyKey, { intentos = 4, pausaMs = 1500 } = {}) {
+  for (let intento = 1; ; intento++) {
+    try {
+      return await pedir('/api/pagos', {
+        method: 'POST',
+        cuerpo: { reservaId },
+        headers: { 'Idempotency-Key': idempotencyKey },
+      });
+    } catch (err) {
+      if (err.codigo !== 'RESERVA_DESCONOCIDA' || intento >= intentos) throw err;
+      await esperar(pausaMs);
+    }
+  }
 }
+
+export const urlDeCheckout = (pago) => pago?.checkoutUrl ?? pago?.urlCheckout ?? pago?.url ?? null;

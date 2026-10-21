@@ -7,6 +7,7 @@ type Cochera {
   tipoVehiculo: TipoVehiculo!
   ubicacionAproximada: Punto!
   direccionExacta: String   # solo con reserva confirmada
+  ubicacion: Punto          # ubicación exacta; mismas reglas que direccionExacta
   fotos: [String!]!
   propietario: Propietario!
   disponibilidad: [Franja!]!

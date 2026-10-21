@@ -3,6 +3,8 @@
 const COLUMNAS = `
   c.id, c.propietario_id, c.titulo, c.precio_hora::float8 AS precio_hora, c.tipo_vehiculo,
   c.direccion_exacta, c.fotos,
+  ST_Y(c.ubicacion::geometry) AS lat,
+  ST_X(c.ubicacion::geometry) AS lng,
   ST_Y(c.ubicacion_aproximada::geometry) AS aprox_lat,
   ST_X(c.ubicacion_aproximada::geometry) AS aprox_lng`;
 
