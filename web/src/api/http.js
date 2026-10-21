@@ -54,8 +54,41 @@ export function alCerrarSesion(fn) {
   return () => oyentesCierre.delete(fn);
 }
 
-async function enviar(ruta, { method = 'GET', cuerpo, token } = {}) {
-  const headers = { Accept: 'application/json' };
+// Para el WebSocket, que manda el token en el handshake.
+export const accessTokenActual = () => accessToken;
+
+const CODIGO_POR_ESTADO = {
+  401: 'NO_AUTENTICADO',
+  403: 'PROHIBIDO',
+  404: 'NO_ENCONTRADO',
+  409: 'CONFLICTO',
+  422: 'DATOS_INVALIDOS',
+  429: 'DEMASIADOS_INTENTOS',
+};
+
+// Cada servicio responde sus errores a su manera: Usuarios { error: { codigo, mensaje } },
+// Reservas (FastAPI) { detail: "..." } o { detail: [{ loc, msg }] }, y el gateway HTML.
+function errorDesde(status, datos) {
+  const error = datos?.error ?? {};
+  let { codigo, mensaje, detalles = [] } = error;
+  if (!mensaje && typeof datos?.detail === 'string') mensaje = datos.detail;
+  if (!mensaje && Array.isArray(datos?.detail)) {
+    mensaje = 'Revisá los datos marcados.';
+    detalles = datos.detail.map((d) => ({ campo: (d.loc ?? []).slice(1).join('.'), mensaje: d.msg }));
+  }
+  if (!mensaje && status === 429) mensaje = 'Demasiados intentos seguidos. Esperá un minuto y probá de nuevo.';
+  if (!mensaje && status >= 500)
+    mensaje = 'Ese servicio no está respondiendo en este momento. Probá de nuevo en un rato.';
+  return new ErrorApi(
+    status,
+    codigo ?? CODIGO_POR_ESTADO[status] ?? (status >= 500 ? 'SERVICIO_NO_DISPONIBLE' : 'ERROR'),
+    mensaje ?? 'El servicio no respondió como esperábamos. Probá de nuevo en un momento.',
+    detalles,
+  );
+}
+
+async function enviar(ruta, { method = 'GET', cuerpo, token, headers: extra = {} } = {}) {
+  const headers = { Accept: 'application/json', ...extra };
   if (cuerpo !== undefined) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
 
@@ -77,15 +110,7 @@ async function enviar(ruta, { method = 'GET', cuerpo, token } = {}) {
   } catch {
     // Respuesta sin JSON (por ejemplo, el gateway caído devolviendo HTML).
   }
-  if (!res.ok) {
-    const error = datos?.error ?? {};
-    throw new ErrorApi(
-      res.status,
-      error.codigo ?? (res.status >= 500 ? 'SERVICIO_NO_DISPONIBLE' : 'ERROR'),
-      error.mensaje ?? 'El servicio no respondió como esperábamos. Probá de nuevo en un momento.',
-      error.detalles ?? [],
-    );
-  }
+  if (!res.ok) throw errorDesde(res.status, datos);
   return datos;
 }
 

@@ -72,6 +72,54 @@ export function aInputLocal(fecha) {
   return `${fecha.getFullYear()}-${p(fecha.getMonth() + 1)}-${p(fecha.getDate())}T${p(fecha.getHours())}:${p(fecha.getMinutes())}`;
 }
 
+// Cómo se nombra cada estado del contrato en pantalla.
+export const NOMBRE_ESTADO = {
+  PENDIENTE_PAGO: 'Retenida',
+  CONFIRMADA: 'Confirmada',
+  CANCELADA: 'Cancelada',
+  EXPIRADA: 'Vencida',
+  FINALIZADA: 'Finalizada',
+};
+
+export const nombreTipo = (valor) => TIPOS_VEHICULO.find((t) => t.valor === valor)?.nombre ?? valor;
+
+// diaSemana del contrato: 1 = lunes ... 7 = domingo.
+export const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+// Horas cada 30 minutos para los selectores de franja ("24:00" = fin del día).
+export const HORAS = [...Array(49)].map((_, i) => `${String(Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}`);
+
+export function formatoFecha(iso) {
+  return new Date(iso).toLocaleDateString('es-UY', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+// Franja pedida por la persona (valores de <input type="datetime-local">). Devuelve el campo a
+// marcar y el mensaje, o null si está bien.
+export function validarFranja({ desde, hasta }) {
+  if (!desde) return { campo: 'desde', mensaje: 'Completá desde qué hora necesitás la cochera.' };
+  if (!hasta) return { campo: 'hasta', mensaje: 'Completá hasta qué hora necesitás la cochera.' };
+  if (new Date(hasta) <= new Date(desde))
+    return { campo: 'hasta', mensaje: 'La hora de fin tiene que ser posterior a la de inicio.' };
+  if (new Date(desde) < Date.now() - 60_000)
+    return { campo: 'desde', mensaje: 'Elegí una franja que empiece de ahora en adelante.' };
+  return null;
+}
+
+// Mañana de 9 a 13, la franja con la que arrancan la búsqueda y la ficha.
+export function franjaInicial() {
+  const desde = new Date();
+  desde.setDate(desde.getDate() + 1);
+  desde.setHours(9, 0, 0, 0);
+  const hasta = new Date(desde);
+  hasta.setHours(13);
+  return { desde: aInputLocal(desde), hasta: aInputLocal(hasta) };
+}
+
+export function formatoCuentaRegresiva(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
 // Tono de cada estado de reserva en el tablero.
 export const TONO_ESTADO = {
   LIBRE: 'letra',
