@@ -12,7 +12,6 @@ services:
     restart: unless-stopped
 
   usuarios:
-    profiles: ["pendiente"]
     build: ./usuarios
     environment:
       PORT: "3000"
