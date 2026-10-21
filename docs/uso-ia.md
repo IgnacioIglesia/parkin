@@ -13,3 +13,4 @@ _Qué herramientas usamos y para qué tipo de tareas._
 | 2026-10-21 | Ignacio | Claude Code | Estructura inicial del repo a partir de la letra y la preentrega | Esqueleto de carpetas, docker-compose, docs |
 | 2026-10-21 | Diego | Claude Code | Tipos auxiliares del esquema GraphQL de Cocheras en `docs/contratos.md` | Se definieron Punto, Franja, TipoVehiculo, Propietario y CocheraInput respetando los nombres del contrato |
 | 2026-10-21 | Diego | Claude Code | Esqueleto del servicio Cocheras: Express + Apollo, health/ready, logs JSON con traceId, Dockerfile y tests | Se aceptó; resolvers quedan como stubs hasta el paso de PostGIS |
+| 2026-10-21 | Diego | Claude Code | Persistencia de Cocheras: esquema PostGIS, migraciones, resolvers, búsqueda por radio con disponibilidad y ocupación de Reservas, DataLoader | Se aceptó. Decisiones: ubicación aproximada fija a 100-300 m; si Reservas no responde la búsqueda degrada sin filtrar ocupación pero la baja se rechaza |

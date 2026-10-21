@@ -3,7 +3,9 @@ import express from 'express';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express5';
 import depthLimit from 'graphql-depth-limit';
+import { GraphQLError } from 'graphql';
 import { pinoHttp } from 'pino-http';
+import { crearContexto } from './graphql/contexto.js';
 import { resolvers } from './graphql/resolvers.js';
 import { traceIdDe } from './traza.js';
 
@@ -11,11 +13,34 @@ const typeDefs = readFileSync(new URL('./graphql/schema.graphql', import.meta.ur
 const PROFUNDIDAD_MAXIMA = 5;
 const RUTAS_SIN_LOG = new Set(['/health', '/ready']);
 
-export async function crearApp({ logger, pool }) {
+// Los errores que no son de la API (SQL, red, bugs) se loguean con su traceId y al
+// cliente le llega un mensaje genérico, sin detalles internos.
+const registrarErroresInternos = {
+  async requestDidStart() {
+    return {
+      async didEncounterErrors({ contextValue, errors }) {
+        for (const e of errors) {
+          if (e.originalError && !(e.originalError instanceof GraphQLError)) {
+            contextValue.log.error({ err: e.originalError, ruta: e.path?.join('.') }, 'error interno en GraphQL');
+          }
+        }
+      },
+    };
+  },
+};
+
+function ocultarErroresInternos(formateado) {
+  if (formateado.extensions?.code !== 'INTERNAL_SERVER_ERROR') return formateado;
+  return { message: 'Error interno', path: formateado.path, extensions: { code: 'INTERNAL_SERVER_ERROR' } };
+}
+
+export async function crearApp({ logger, pool, reservas }) {
   const apollo = new ApolloServer({
     typeDefs,
     resolvers,
     validationRules: [depthLimit(PROFUNDIDAD_MAXIMA)],
+    plugins: [registrarErroresInternos],
+    formatError: ocultarErroresInternos,
   });
   await apollo.start();
 
@@ -51,7 +76,7 @@ export async function crearApp({ logger, pool }) {
     '/graphql',
     express.json(),
     expressMiddleware(apollo, {
-      context: async ({ req }) => ({ log: req.log, traceId: req.id, pool }),
+      context: async ({ req }) => crearContexto({ req, pool, reservas }),
     }),
   );
 
