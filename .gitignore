@@ -26,3 +26,4 @@ venv/
 logs/
 pgdata/
 coverage/
+.pytest_cache/
