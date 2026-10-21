@@ -231,7 +231,7 @@ El sistema es plano y tonal: la profundidad sale de tres escalones de neutro (ac
 
 ## Shapes
 
-Esquinas vivas o casi vivas. Botones, campos, cajas, celdas y placas usan 2px; paneles, filas, tablero, avisos y barra usan 0. La forma propia es la celda de paleta: un rectángulo de 0.74 × 1.16em con una línea negra horizontal al 50% que hace de bisagra; la placa del mapa repite esa bisagra con un degradado de corte duro y termina en una flecha triangular de 6px hacia el punto.
+Esquinas vivas o casi vivas. Botones, campos, cajas, celdas y placas usan 2px; paneles, filas, tablero, avisos y barra usan 0. La forma propia es la celda de paleta: un rectángulo de 0.74 × 1.16em con una línea negra horizontal al 50% que hace de bisagra; la placa del mapa es lisa (sin bisagra: atravesando una línea de texto se leía como tachado) y termina en una flecha triangular de 6px hacia el punto.
 
 El borde punteado tiene un solo significado: inerte. Lo usan el botón deshabilitado (borde punteado de costura, fondo transparente, texto acero claro) y el campo de solo lectura.
 
@@ -267,7 +267,7 @@ Cada carácter vive en su celda (fondo celda, 2px, bisagra negra al medio, separ
 Tabla semántica sobre negro paleta. Encabezado con contador en celdas (dos dígitos, ámbar; rojo y «--» si hay error; «··» mientras busca) y título en headline; debajo, la franja en letra y el resto en acero claro. Columnas Código / Cochera / Por hora / Estado con encabezados en label, encabezado pegajoso, filas separadas por costura de 1px. Hover: fondo celda. Fila seleccionada: fondo ámbar al 10%, contorno ámbar de 1px hacia adentro y código en celdas ámbar. Mientras busca, el cuerpo baja a 50% de opacidad. El detalle de la cochera elegida cierra el tablero sobre fondo celda con código ámbar, total en celdas y el aviso de ubicación aproximada con un candado.
 
 ### Placa de mapa
-Pin rectangular con código y precio («PO14 · $90») en Barlow Condensed 600 de 15px, fondo celda partido por la bisagra, borde de costura y flecha de 6px. Seleccionada: fondo y borde ámbar con texto paleta; comparte el ámbar con la fila elegida del tablero. Las teselas del mapa se invierten, se desaturan y se oscurecen; pines y controles conservan sus colores.
+Pin rectangular con código y precio («PO14 · $90») en Barlow Condensed 600 de 15px, fondo celda liso, borde de costura y flecha de 6px. Seleccionada: fondo y borde ámbar con texto paleta; comparte el ámbar con la fila elegida del tablero. Las teselas del mapa se invierten, se desaturan y se oscurecen; pines y controles conservan sus colores.
 
 ## Do's and Don'ts
 

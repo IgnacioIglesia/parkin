@@ -82,6 +82,27 @@ test('POST /graphql rechaza queries con profundidad mayor a 5', async () => {
   assert.ok(mensajes.some((m) => m.includes('exceeds maximum operation depth of 5')), mensajes.join('\n'));
 });
 
+test('GET /metrics expone métricas HTTP, GraphQL y estado de dependencias', async () => {
+  await request(app)
+    .post('/graphql')
+    .set('X-User-Id', '11111111-1111-4111-8111-111111111111')
+    .set('X-User-Roles', 'PROPIETARIO')
+    .send({ query: '{ misCocheras { id } }' });
+  await request(app).post('/graphql').send({ query: '{ misCocheras { id } }' });
+  await request(app).get('/health');
+
+  const res = await request(app).get('/metrics');
+  assert.equal(res.status, 200);
+  assert.match(res.headers['content-type'], /text\/plain/);
+  assert.match(res.text, /cocheras_http_requests_total\{metodo="POST",ruta="\/graphql",estado="200"\} \d+/);
+  assert.match(res.text, /cocheras_graphql_operaciones_total\{operacion="misCocheras",resultado="ok"\} \d+/);
+  assert.match(res.text, /cocheras_graphql_operaciones_total\{operacion="misCocheras",resultado="error_cliente"\} \d+/);
+  assert.match(res.text, /cocheras_rabbitmq_conectado \d/);
+  assert.match(res.text, /process_cpu_seconds_total/);
+  // Las rutas internas no se miden: inflarían las métricas con el tráfico de Docker y Prometheus.
+  assert.doesNotMatch(res.text, /ruta="\/(health|metrics|ready)"/);
+});
+
 test('traceIdDe toma el traceId del header traceparent', () => {
   const req = { headers: { traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01' } };
   assert.equal(traceIdDe(req), '4bf92f3577b34da6a3ce929d0e0e4736');

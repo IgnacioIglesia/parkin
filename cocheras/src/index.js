@@ -5,6 +5,7 @@ import { crearPool, migrar } from './db.js';
 import { crearLogger } from './logger.js';
 import { crearApp } from './app.js';
 import { crearClienteReservas } from './reservas.js';
+import { apagarTelemetria } from './telemetria.js';
 
 const config = cargarConfig();
 const logger = crearLogger(config.nivelLog);
@@ -40,6 +41,7 @@ async function apagar(senal) {
   await consumidor.detener();
   await cache.detener();
   await pool.end();
+  await apagarTelemetria();
   process.exit(0);
 }
 
