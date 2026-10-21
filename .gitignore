@@ -1,0 +1,28 @@
+# Secrets / entorno
+.env
+.env.*
+!.env.example
+
+# SO / editores
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Dependencias y builds (genérico, cubre el stack que elijan)
+node_modules/
+dist/
+build/
+target/
+out/
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.class
+
+# Logs y datos locales
+*.log
+logs/
+pgdata/
+coverage/
