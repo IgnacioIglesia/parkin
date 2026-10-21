@@ -12,3 +12,7 @@ Dockerfile text eol=lf
 *.gif binary
 *.ico binary
 *.pdf binary
+
+# Registro de IA: todos agregan filas al final. Al mergear se conservan las líneas de ambos
+# lados en vez de marcar conflicto (solo en merges locales; GitHub igual lo muestra en el PR).
+docs/uso-ia.md merge=union

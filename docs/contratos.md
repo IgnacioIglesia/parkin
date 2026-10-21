@@ -77,6 +77,7 @@ type Cochera {
   tipoVehiculo: TipoVehiculo!
   ubicacionAproximada: Punto!
   direccionExacta: String   # solo con reserva confirmada
+  ubicacion: Punto          # ubicación exacta; mismas reglas que direccionExacta
   fotos: [String!]!
   propietario: Propietario!
   disponibilidad: [Franja!]!
@@ -148,7 +149,7 @@ input CocheraInput {
 Reglas:
 - `desde` y `hasta` de `buscarCocheras` van en ISO-8601 UTC. La búsqueda devuelve solo cocheras disponibles en toda la franja.
 - `tipo` en `buscarCocheras` devuelve las cocheras donde entra ese vehículo (una `CAMIONETA` admite también `AUTO` y `MOTO`).
-- `ubicacionAproximada` está desplazada entre 100 y 300 m de la real, fija para cada cochera. `direccionExacta` es `null` salvo para el propietario o un conductor con reserva confirmada.
+- `ubicacionAproximada` está desplazada entre 100 y 300 m de la real, fija para cada cochera. `direccionExacta` y `ubicacion` (el punto exacto) son `null` salvo para el propietario o un conductor con reserva confirmada. Así el propietario puede editar su cochera sin volver a marcar el punto en el mapa.
 - Las horas de `Franja` van alineadas a :00 o :30, con `horaDesde < horaHasta`. Una franja no cruza la medianoche: 22:00 a 06:00 se carga como dos franjas.
 - `definirDisponibilidad` reemplaza todas las franjas de la cochera. `actualizarCochera` reemplaza todos los campos del input.
 - `crearCochera`, `actualizarCochera`, `definirDisponibilidad`, `eliminarCochera` y `misCocheras` exigen el rol `PROPIETARIO`. Solo el dueño puede modificar su cochera.
