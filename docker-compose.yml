@@ -51,7 +51,6 @@ services:
     restart: unless-stopped
 
   pagos:
-    profiles: ["pendiente"]
     build: ./pagos
     environment:
       PORT: "3000"
@@ -59,7 +58,9 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       REDIS_URL: redis://redis:6379
       PASARELA_ACCESS_TOKEN: ${PASARELA_ACCESS_TOKEN:-}
-    ports: ["3002:3000"]
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    # Puerto expuesto solo para probar sin gateway; se quita cuando el gateway rutee /api/pagos
+    ports: ["8084:3000"]
     depends_on:
       db-pagos: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
