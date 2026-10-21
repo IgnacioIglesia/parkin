@@ -18,6 +18,11 @@ RESERVAS_EXPIRADAS = Counter("reservas_expiradas_total", "Reservas expiradas por
 RESERVAS_FINALIZADAS = Counter("reservas_finalizadas_total", "Reservas confirmadas cuya franja ya terminó")
 CONFLICTOS = Counter("reservas_conflictos_total", "Intentos de reserva rechazados por franja ocupada (409)")
 
+REINTENTOS_TRANSACCION = Counter(
+    "reservas_reintentos_transaccion_total",
+    "Transacciones de alta reintentadas por deadlock o fallo de serialización",
+    ["motivo"],
+)
 CONSULTAS_COCHERAS = Counter(
     "reservas_consultas_cocheras_total", "Consultas de Reservas a Cocheras", ["resultado"]
 )

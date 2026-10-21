@@ -65,6 +65,13 @@ CREATE TABLE reserva (
 
 Si dos conductores insertan reservas solapadas al mismo tiempo, la base acepta la primera y rechaza la segunda. El servicio traduce ese error a `409 Conflict`. Las reservas canceladas o expiradas quedan fuera de la restricción, así que liberan la franja automáticamente. Las franjas son rangos semiabiertos `[desde, hasta)`: una reserva de 14 a 16 y otra de 16 a 18 no se solapan.
 
+**Altas simultáneas de una misma cochera.** La restricción de exclusión garantiza que no haya doble reserva, pero con PostgreSQL real tenía un efecto colateral: dos `INSERT` concurrentes sobre la misma cochera pueden esperarse mutuamente mientras verifican la restricción, y la base aborta uno por *deadlock*. La reserva nunca se duplicaba, pero el cliente recibía un `500` (con 10 solicitudes simultáneas se vio hasta en 9 de 10). Se resolvió en dos capas:
+
+1. **Lock por cochera** (`pg_advisory_xact_lock` sobre el id de la cochera, dentro de la transacción de alta). Las altas de una misma cochera hacen fila: la primera confirma y las demás reciben la violación de exclusión (`409`), sin esperarse en cruz. Las cocheras distintas no se bloquean entre sí.
+2. **Reintento** de la transacción completa ante `DeadlockDetected` o `SerializationFailure` (hasta 3 veces, con una pequeña espera aleatoria). En el reintento el ganador ya confirmó, y la solicitud recibe `409`. Si se agotan los intentos responde `503` con `Retry-After: 1`. Se cuenta en `reservas_reintentos_transaccion_total`.
+
+Con solo el reintento no alcanzaba: en una prueba contra PostgreSQL 16, de 250 solicitudes 18 igual terminaron en `503`, porque las víctimas que reintentan juntas vuelven a chocar. Con el lock, en 3000 solicitudes (300 rondas de 10 simultáneas) y 2400 (60 rondas de 40) hubo exactamente un `201` por ronda y ningún `500` ni `503`, sin necesitar reintentos.
+
 **Evidencia.** El test de concurrencia lanza 30 requests simultáneos sobre la misma cochera y franja: exactamente uno recibe `201` y los otros 29 reciben `409`, y la base queda con una sola reserva.
 
 ## 5. Idempotencia y control optimista
