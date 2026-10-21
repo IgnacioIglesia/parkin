@@ -1,4 +1,7 @@
 {
+  "vhosts": [{ "name": "/" }],
+  "users": [{ "name": "guest", "password": "guest", "tags": ["administrator"] }],
+  "permissions": [{ "user": "guest", "vhost": "/", "configure": ".*", "write": ".*", "read": ".*" }],
   "exchanges": [
     { "name": "cocheras.eventos", "vhost": "/", "type": "topic", "durable": true, "auto_delete": false, "internal": false, "arguments": {} },
     { "name": "cocheras.dlx", "vhost": "/", "type": "fanout", "durable": true, "auto_delete": false, "internal": false, "arguments": {} }
