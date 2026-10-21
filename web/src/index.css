@@ -1,0 +1,304 @@
+@import "tailwindcss";
+
+@theme {
+  --color-acero: #2a2d31;
+  --color-paleta: #0b0b0d;
+  --color-celda: #17181b;
+  --color-costura: #5b5e63;
+  --color-tenue: #a7aaaf;
+  --color-letra: #f2f2f2;
+  --color-ambar: #ffb000;
+  --color-verde: #3dd68c;
+  --color-rojo: #f0524d;
+
+  --font-sans: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-celda: "Barlow Condensed", "Barlow", ui-sans-serif, sans-serif;
+
+  --ease-salida: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  html {
+    background: var(--color-acero);
+    color: var(--color-letra);
+    font-family: var(--font-sans);
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    scrollbar-color: var(--color-costura) var(--color-paleta);
+  }
+  body {
+    min-height: 100dvh;
+    background: var(--color-acero);
+  }
+  ::selection {
+    background: var(--color-ambar);
+    color: var(--color-paleta);
+  }
+  input,
+  select,
+  textarea {
+    caret-color: var(--color-ambar);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ambar);
+    outline-offset: 2px;
+  }
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+  a {
+    text-underline-offset: 3px;
+  }
+}
+
+@layer components {
+  .etiqueta {
+    font-family: var(--font-celda);
+    font-weight: 600;
+    font-size: 0.875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-tenue);
+  }
+
+  .campo {
+    width: 100%;
+    background: var(--color-paleta);
+    border: 1px solid var(--color-costura);
+    border-radius: 2px;
+    padding: 0.7rem 0.85rem;
+    font-size: 1rem;
+    color: var(--color-letra);
+    transition: border-color 150ms;
+  }
+  .campo:hover {
+    border-color: var(--color-tenue);
+  }
+  .campo:focus-visible {
+    outline: none;
+    border-color: var(--color-ambar);
+    box-shadow: 0 0 0 1px var(--color-ambar);
+  }
+  .campo[aria-invalid="true"] {
+    border-color: var(--color-rojo);
+  }
+  .campo::placeholder {
+    color: #8b8e93;
+  }
+  .campo:read-only {
+    color: var(--color-tenue);
+    border-style: dashed;
+  }
+  .campo::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+    cursor: pointer;
+  }
+
+  .boton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-family: var(--font-celda);
+    font-weight: 700;
+    font-size: 1.0625rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.7rem 1.25rem;
+    border-radius: 2px;
+    border: 1px solid transparent;
+    transition:
+      background-color 150ms,
+      border-color 150ms,
+      color 150ms;
+    cursor: pointer;
+  }
+  .boton:disabled,
+  .boton-primario:disabled {
+    background: transparent;
+    color: var(--color-tenue);
+    border: 1px dashed var(--color-costura);
+    cursor: not-allowed;
+  }
+  .boton-primario {
+    background: var(--color-ambar);
+    color: var(--color-paleta);
+  }
+  .boton-primario:not(:disabled):hover {
+    background: #ffc340;
+  }
+  .boton-secundario {
+    background: transparent;
+    color: var(--color-letra);
+    border-color: var(--color-costura);
+  }
+  .boton-secundario:not(:disabled):hover {
+    border-color: var(--color-tenue);
+    background: var(--color-paleta);
+  }
+  .boton-peligro {
+    background: transparent;
+    color: var(--color-rojo);
+    border-color: rgb(240 82 77 / 0.5);
+  }
+  .boton-peligro:not(:disabled):hover,
+  .boton-peligro:focus-visible {
+    background: rgb(240 82 77 / 0.12);
+    border-color: var(--color-rojo);
+  }
+
+  /* Campo compacto con la etiqueta adentro, para la barra superior. */
+  .caja {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    background: var(--color-celda);
+    border: 1px solid #303237;
+    border-radius: 2px;
+    padding: 5px 10px 6px;
+    transition: border-color 150ms;
+  }
+  .caja:hover {
+    border-color: var(--color-costura);
+  }
+  .caja:focus-within {
+    border-color: var(--color-ambar);
+  }
+  .caja:has([aria-invalid="true"]) {
+    border-color: var(--color-rojo);
+  }
+  .caja .etiqueta {
+    font-size: 0.75rem;
+  }
+  .caja input,
+  .caja select {
+    width: 100%;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: var(--color-letra);
+    font-size: 0.975rem;
+    outline: none;
+  }
+  .caja input::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+    cursor: pointer;
+  }
+  .caja option {
+    background: var(--color-paleta);
+  }
+
+  .panel {
+    background: var(--color-paleta);
+    border: 1px solid #1f2024;
+  }
+}
+
+/* Celdas de paleta: cada carácter vive en su celda y gira cuando cambia. */
+.celdas {
+  display: inline-flex;
+  gap: 0.1em;
+}
+.celda {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 0.74em;
+  height: 1.16em;
+  background: var(--color-celda);
+  border-radius: 2px;
+  font-family: var(--font-celda);
+  font-weight: 600;
+  line-height: 1;
+  overflow: hidden;
+  perspective: 12em;
+}
+.celda::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: 1px;
+  background: rgb(0 0 0 / 0.8);
+}
+.celda > span {
+  display: block;
+}
+.celda-giro {
+  animation: giro 300ms var(--ease-salida) both;
+}
+@keyframes giro {
+  from {
+    transform: rotateX(-95deg);
+    filter: brightness(0.35);
+  }
+  to {
+    transform: none;
+    filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .celda-giro {
+    animation: none;
+  }
+}
+
+/* Leaflet en el mundo del tablero */
+.leaflet-container {
+  background: var(--color-paleta);
+  font-family: var(--font-sans);
+}
+/* Solo las teselas: los pines y controles quedan con sus colores reales. */
+.leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) grayscale(0.85) brightness(0.78) contrast(1.05);
+}
+.leaflet-control-attribution {
+  background: rgb(11 11 13 / 0.85) !important;
+  color: var(--color-tenue) !important;
+}
+.leaflet-control-attribution a {
+  color: var(--color-letra) !important;
+}
+.leaflet-bar a,
+.leaflet-bar a:hover {
+  background: var(--color-paleta);
+  color: var(--color-letra);
+  border-color: var(--color-acero);
+}
+.placa {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 6px));
+  white-space: nowrap;
+  /* Sin bisagra: atravesando una línea de texto se lee como tachado. */
+  background: var(--color-celda);
+  color: var(--color-letra);
+  border: 1px solid var(--color-costura);
+  border-radius: 2px;
+  padding: 4px 9px;
+  font-family: var(--font-celda);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  box-shadow: 0 3px 10px rgb(0 0 0 / 0.55);
+  cursor: pointer;
+}
+.placa::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  translate: -50% 0;
+  border: 6px solid transparent;
+  border-bottom: 0;
+  border-top-color: var(--color-costura);
+}
+.placa-sel {
+  background: var(--color-ambar);
+  border-color: var(--color-ambar);
+  color: var(--color-paleta);
+}
+.placa-sel::after {
+  border-top-color: var(--color-ambar);
+}
