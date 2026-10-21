@@ -125,7 +125,7 @@ Casos de falla, todos con compensación:
 
 ## Despliegue
 
-Todo el sistema se levanta con `docker compose up --build`. El front puede servirse desde su contenedor o desplegarse en Vercel, en cuyo caso el gateway tiene que ser accesible por HTTPS y permitir ese origen (CORS). La configuración va por variables de entorno (12-Factor); ver [`12-factor.md`](12-factor.md).
+Todo el sistema se levanta con `docker compose up --build`. El front puede servirse desde su contenedor o desplegarse en Vercel, en cuyo caso el gateway tiene que ser accesible por HTTPS y permitir ese origen (CORS). La configuración va por variables de entorno (12-Factor); ver [`12-factor.md`](12-factor.md). Para mostrarlo desde otro dispositivo (por ejemplo en la defensa) hay un script que abre un túnel público: ver [`demo-remoto.md`](demo-remoto.md).
 
 ## Límites conocidos
 
