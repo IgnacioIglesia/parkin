@@ -69,6 +69,5 @@ La interfaz toma la forma de un **tablero de partidas**. Códigos, precios, hora
 También se probó en 390 px de ancho.
 
 **Pendiente:**
-- El pago y los eventos en vivo dependen del servicio de Pagos. Hasta que exista, «Pagá» informa que el pago no está disponible y que la reserva sigue retenida.
-- El nombre del campo con la URL de checkout se fija con Pagos (se aceptan `urlCheckout`, `checkoutUrl`, `url` e `init_point`).
+- El pago sigue el contrato de Pagos: `POST /api/pagos { reservaId }` con su propia `Idempotency-Key` (reusada si se reintenta), reintento automático ante `404 RESERVA_DESCONOCIDA` (Pagos todavía no recibió `reserva.creada`) y el checkout en otra pestaña, mientras la reserva se actualiza sola al confirmarse. Probado con respuestas simuladas según el contrato; falta probarlo con el servicio de Pagos real.
 - Los bloqueos de fechas puntuales no están en el contrato GraphQL.

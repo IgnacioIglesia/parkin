@@ -10,9 +10,11 @@ Emite el JWT RS256 que el gateway valida con la clave pública.
 ## Levantar
 
 ```bash
-bash infra/jwt/generar-claves.sh     # una sola vez: crea infra/jwt/*.pem (no se commitean)
 docker compose up --build usuarios
 ```
+
+Las claves JWT las genera el servicio `jwt-claves` del compose (`src/generar-claves.js`) en
+`infra/jwt/` si faltan; si existen, no las toca. Fuera de Docker: `node src/generar-claves.js ../infra/jwt`.
 
 Las migraciones (`migrations/*.sql`) se aplican solas al arrancar, con un advisory lock de Postgres
 para que dos réplicas que arrancan a la vez no migren en paralelo.

@@ -17,7 +17,6 @@ http://localhost:8081. nginx sirve el build y manda `/api`, `/graphql` y `/ws` a
 
 ```bash
 # desde la raíz del repo, con el backend levantado
-bash infra/jwt/generar-claves.sh     # una sola vez
 docker compose up --build -d
 
 cd web
