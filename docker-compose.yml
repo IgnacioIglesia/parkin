@@ -1,67 +1,115 @@
-# Entorno local. Las credenciales son solo para desarrollo.
-# Los servicios de aplicación se descomentan cuando tengan su Dockerfile.
+# Entorno local completo. Las credenciales son solo para desarrollo.
+#
+#   docker compose up --build                      servicios listos + infraestructura
+#   docker compose --profile pendiente up --build  incluye también los servicios sin código aún
+#
+# Un servicio con `profiles: ["pendiente"]` no tiene código todavía. Cuando su responsable
+# lo mergea a main, borra esa línea y pasa a levantar con el resto.
 services:
-  # gateway:
-  #   image: nginx:1.27
-  #   ports: ["8080:80"]
-  #   volumes: ["./gateway/nginx.conf:/etc/nginx/nginx.conf:ro"]
-  #   depends_on: [usuarios, cocheras, reservas, pagos]
-  #
-  # usuarios:
-  #   build: ./usuarios
-  #   environment:
-  #     DATABASE_URL: postgres://app:app@db-usuarios:5432/usuarios
-  #     JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_key
-  #   depends_on: [db-usuarios]
-  #
-  # cocheras:
-  #   build: ./cocheras
-  #   environment:
-  #     DATABASE_URL: postgres://app:app@db-cocheras:5432/cocheras
-  #     REDIS_URL: redis://redis:6379
-  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
-  #   depends_on: [db-cocheras, redis, rabbitmq]
-  #
-  # reservas:
-  #   build: ./reservas
-  #   environment:
-  #     DATABASE_URL: postgres://app:app@db-reservas:5432/reservas
-  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
-  #     RETENCION_MINUTOS: "10"
-  #   depends_on: [db-reservas, rabbitmq]
-  #
-  # pagos:
-  #   build: ./pagos
-  #   environment:
-  #     DATABASE_URL: postgres://app:app@db-pagos:5432/pagos
-  #     RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
-  #     REDIS_URL: redis://redis:6379
-  #     PASARELA_ACCESS_TOKEN: ${PASARELA_ACCESS_TOKEN}
-  #   depends_on: [db-pagos, rabbitmq, redis]
+  gateway:
+    build: ./gateway
+    ports: ["8080:80"]
+    restart: unless-stopped
+
+  usuarios:
+    profiles: ["pendiente"]
+    build: ./usuarios
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://app:app@db-usuarios:5432/usuarios
+      JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private.pem
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public.pem
+    volumes: ["./infra/jwt:/run/secrets:ro"]  # generar con infra/jwt/generar-claves.sh
+    ports: ["3001:3000"]
+    depends_on:
+      db-usuarios: { condition: service_healthy }
+    restart: unless-stopped
+
+  cocheras:
+    profiles: ["pendiente"]
+    build: ./cocheras
+    environment:
+      DATABASE_URL: postgres://app:app@db-cocheras:5432/cocheras
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    ports: ["4000:4000"]
+    depends_on:
+      db-cocheras: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    restart: unless-stopped
+
+  reservas:
+    build: ./reservas
+    environment:
+      DATABASE_URL: postgres://app:app@db-reservas:5432/reservas
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      RETENCION_MINUTOS: "10"
+    ports: ["8000:8000"]
+    depends_on:
+      db-reservas: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    restart: unless-stopped
+
+  pagos:
+    profiles: ["pendiente"]
+    build: ./pagos
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://app:app@db-pagos:5432/pagos
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      REDIS_URL: redis://redis:6379
+      PASARELA_ACCESS_TOKEN: ${PASARELA_ACCESS_TOKEN:-}
+    ports: ["3002:3000"]
+    depends_on:
+      db-pagos: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
 
   db-usuarios:
     image: postgres:16
     environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: usuarios }
     ports: ["5441:5432"]
     volumes: ["pg-usuarios:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d usuarios"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   db-cocheras:
     image: postgis/postgis:16-3.4
     environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: cocheras }
     ports: ["5442:5432"]
     volumes: ["pg-cocheras:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d cocheras"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   db-reservas:
     image: postgres:16
     environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: reservas }
     ports: ["5443:5432"]
     volumes: ["pg-reservas:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d reservas"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   db-pagos:
     image: postgres:16
     environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: pagos }
     ports: ["5444:5432"]
     volumes: ["pg-pagos:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d pagos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -70,10 +118,20 @@ services:
     volumes:
       - ./infra/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-definitions.conf:ro
       - ./infra/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7
     ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   prometheus:
     image: prom/prometheus:v2.53.0
