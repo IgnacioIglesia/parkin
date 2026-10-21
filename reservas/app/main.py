@@ -161,6 +161,10 @@ def crear_reserva(
         raise HTTPException(status_code=409, detail="Esa franja acaba de ser reservada")
     except repository.ClaveDeOtroUsuario:
         raise HTTPException(status_code=409, detail="Idempotency-Key ya utilizada")
+    except repository.ConflictoTransitorio:
+        # Muy poco probable (los reintentos y el lock por cochera lo evitan). Se pide reintentar.
+        log.warning("Conflicto transitorio de la base al crear la reserva", extra={"cocheraId": str(body.cochera_id)})
+        raise HTTPException(status_code=503, detail="Hubo mucha concurrencia, probá de nuevo", headers={"Retry-After": "1"})
     if creada:
         log.info("Reserva creada", extra={"reservaId": str(reserva["id"]), "cocheraId": str(body.cochera_id)})
     else:

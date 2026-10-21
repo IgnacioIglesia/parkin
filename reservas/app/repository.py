@@ -1,3 +1,5 @@
+import random
+import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -23,6 +25,15 @@ class ClaveDeOtroUsuario(Exception):
     pass
 
 
+class ConflictoTransitorio(Exception):
+    """La base abortó la transacción (deadlock o fallo de serialización) en todos los intentos."""
+
+
+# Errores que PostgreSQL resuelve abortando una de las transacciones; reintentar es lo correcto.
+ERRORES_TRANSITORIOS = (errors.DeadlockDetected, errors.SerializationFailure)
+INTENTOS_MAXIMOS = 3
+
+
 def crear_reserva(
     pool: ConnectionPool,
     *,
@@ -43,34 +54,48 @@ def crear_reserva(
 
     reserva_id = uuid4()
     expira_en = datetime.now(timezone.utc) + timedelta(minutes=retencion_minutos)
-    try:
-        with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                f"INSERT INTO reserva (id, cochera_id, conductor_id, propietario_id, franja, "
-                f"estado, monto, expira_en, idempotency_key) "
-                f"VALUES (%s, %s, %s, %s, %s, 'PENDIENTE_PAGO', %s, %s, %s) "
-                f"RETURNING {COLUMNAS}",
-                (reserva_id, cochera_id, conductor_id, propietario_id,
-                 Range(desde, hasta, "[)"), monto, expira_en, idempotency_key),
-            )
-            reserva = cur.fetchone()
-            cur.execute(
-                "INSERT INTO reserva_historial (reserva_id, estado_anterior, estado_nuevo) "
-                "VALUES (%s, NULL, 'PENDIENTE_PAGO')",
-                (reserva_id,),
-            )
-            eventos.encolar(conn, "reserva.creada", reserva, trace_id)
-        metricas.RESERVAS_CREADAS.inc()
-        return reserva, True
-    except errors.ExclusionViolation:
-        metricas.CONFLICTOS.inc()
-        raise FranjaOcupada()
-    except errors.UniqueViolation:
-        # Dos requests con la misma clave llegaron a la vez: gana el primero.
-        existente = reserva_por_clave(pool, idempotency_key, conductor_id)
-        if existente:
-            return existente, False
-        raise
+    for intento in range(1, INTENTOS_MAXIMOS + 1):
+        try:
+            with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+                # Serializa las altas de una misma cochera. Sin esto, dos INSERT simultáneos sobre
+                # la misma cochera pueden esperarse mutuamente al verificar la restricción de
+                # exclusión y PostgreSQL aborta uno por deadlock. Con el lock hacen fila (el
+                # ganador confirma y los demás reciben ExclusionViolation, o sea 409). Otras
+                # cocheras no se bloquean entre sí.
+                cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (str(cochera_id),))
+                cur.execute(
+                    f"INSERT INTO reserva (id, cochera_id, conductor_id, propietario_id, franja, "
+                    f"estado, monto, expira_en, idempotency_key) "
+                    f"VALUES (%s, %s, %s, %s, %s, 'PENDIENTE_PAGO', %s, %s, %s) "
+                    f"RETURNING {COLUMNAS}",
+                    (reserva_id, cochera_id, conductor_id, propietario_id,
+                     Range(desde, hasta, "[)"), monto, expira_en, idempotency_key),
+                )
+                reserva = cur.fetchone()
+                cur.execute(
+                    "INSERT INTO reserva_historial (reserva_id, estado_anterior, estado_nuevo) "
+                    "VALUES (%s, NULL, 'PENDIENTE_PAGO')",
+                    (reserva_id,),
+                )
+                eventos.encolar(conn, "reserva.creada", reserva, trace_id)
+            metricas.RESERVAS_CREADAS.inc()
+            return reserva, True
+        except errors.ExclusionViolation:
+            metricas.CONFLICTOS.inc()
+            raise FranjaOcupada()
+        except errors.UniqueViolation:
+            # Dos requests con la misma clave llegaron a la vez: gana el primero.
+            existente = reserva_por_clave(pool, idempotency_key, conductor_id)
+            if existente:
+                return existente, False
+            raise
+        except ERRORES_TRANSITORIOS as err:
+            # La transacción se revirtió entera: se vuelve a intentar desde cero. En el reintento
+            # el ganador ya confirmó y esta solicitud recibe ExclusionViolation (409).
+            metricas.REINTENTOS_TRANSACCION.labels(type(err).__name__).inc()
+            if intento == INTENTOS_MAXIMOS:
+                raise ConflictoTransitorio() from err
+            time.sleep(random.uniform(0.005, 0.02) * intento)
 
 
 def reserva_por_clave(pool: ConnectionPool, clave: str, conductor_id: UUID) -> dict | None:

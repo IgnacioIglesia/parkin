@@ -106,6 +106,7 @@ Tres señales, todas con el mismo `traceId`.
 | `reservas_consultas_cocheras_total{resultado}` | Consultas a Cocheras: `ok`, `no_encontrada` o `error` |
 | `reservas_canceladas_total{motivo}` | `cancelada_por_usuario` o `pago_rechazado` |
 | `reservas_conflictos_total` | Intentos rechazados por franja ocupada (409) |
+| `reservas_reintentos_transaccion_total{motivo}` | Altas reintentadas por `DeadlockDetected` o `SerializationFailure`; debería ser casi cero (con el lock por cochera) |
 | `reservas_eventos_procesados_total{tipo,resultado}` | `aplicado`, `duplicado`, `ignorado` o `invalido` |
 | `reservas_eventos_publicados_total{routing_key}` | Eventos enviados a RabbitMQ |
 | `reservas_outbox_pendientes` | Eventos esperando publicarse (sube si RabbitMQ cae) |
