@@ -24,6 +24,12 @@ services:
       db-usuarios: { condition: service_healthy }
     restart: unless-stopped
 
+  web:
+    build: ./web
+    ports: ["8081:80"]  # http://localhost:8081: la web, que habla con el gateway
+    depends_on: [gateway]
+    restart: unless-stopped
+
   cocheras:
     build: ./cocheras
     environment:

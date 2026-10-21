@@ -9,8 +9,9 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
-  # - job_name: usuarios
-  #   static_configs: [{ targets: ["usuarios:3000"] }]
+  - job_name: usuarios
+    metrics_path: /metrics
+    static_configs: [{ targets: ["usuarios:3000"] }]
   - job_name: cocheras
     metrics_path: /metrics
     static_configs: [{ targets: ["cocheras:4000"] }]

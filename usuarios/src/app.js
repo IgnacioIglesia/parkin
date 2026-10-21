@@ -1,6 +1,7 @@
 import express from 'express';
 import { pool } from './db.js';
 import { manejadorErrores } from './errores.js';
+import { registro } from './metricas.js';
 import { traza } from './middleware/traza.js';
 import { authRouter } from './rutas/auth.js';
 import { usuariosRouter } from './rutas/usuarios.js';
@@ -22,6 +23,11 @@ app.get('/ready', async (req, res) => {
     req.log.warn({ err }, 'base de datos no disponible');
     res.status(503).json({ estado: 'no-listo' });
   }
+});
+
+app.get('/metrics', async (_req, res) => {
+  res.set('Content-Type', registro.contentType);
+  res.end(await registro.metrics());
 });
 
 // Clave pública para que el gateway (u otro servicio) verifique los JWT.

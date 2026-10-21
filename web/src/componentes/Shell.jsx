@@ -1,4 +1,4 @@
-import { Map as IconoMapa, UserRound } from 'lucide-react';
+import { CalendarClock, Map as IconoMapa, SquareParking, UserRound } from 'lucide-react';
 import { createContext, useContext, useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -31,9 +31,19 @@ export function Shell() {
                 <IconoMapa size={18} aria-hidden="true" />
                 <span className="hidden sm:inline">Mapa</span>
               </NavLink>
-              <NavLink to="/perfil" className={enlace}>
+              <NavLink to="/reservas" className={enlace} aria-label="Reservas">
+                <CalendarClock size={18} aria-hidden="true" />
+                <span className="hidden sm:inline">Reservas</span>
+              </NavLink>
+              {usuario.roles.includes('PROPIETARIO') && (
+                <NavLink to="/mis-cocheras" className={enlace} aria-label="Tus cocheras">
+                  <SquareParking size={18} aria-hidden="true" />
+                  <span className="hidden sm:inline">Cocheras</span>
+                </NavLink>
+              )}
+              <NavLink to="/perfil" className={enlace} aria-label={`Tu perfil, ${usuario.nombre}`}>
                 <UserRound size={18} aria-hidden="true" />
-                <span className="max-w-[12ch] truncate">{usuario.nombre.split(' ')[0]}</span>
+                <span className="hidden max-w-[12ch] truncate sm:inline">{usuario.nombre.split(' ')[0]}</span>
               </NavLink>
             </nav>
           </div>

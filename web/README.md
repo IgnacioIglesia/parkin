@@ -1,60 +1,62 @@
 # ParkIN · web
 
-Front de ParkIN: ingreso y registro, perfil con roles y búsqueda de cocheras en mapa.
-React 19 + Vite, JavaScript, React Router, Tailwind CSS 4, Leaflet con teselas de OpenStreetMap.
+Front de ParkIN: ingreso y registro, búsqueda en mapa, ficha de cochera, reserva con cuenta
+regresiva y pago, mis reservas, y el panel del propietario (publicar cocheras, horarios, baja).
+React 19 + Vite, JavaScript, React Router, Tailwind CSS 4, Leaflet con teselas de OpenStreetMap,
+Socket.IO para los avisos en vivo.
 
 - Responsable: Martina Berrutti.
-- Desplegable en Vercel (`vercel.json` reescribe las rutas del SPA a `index.html`).
+- Descripción completa para el documento: `docs/secciones/web.md`.
 
-## Levantar en desarrollo
+## Levantar
+
+**Con Docker (como en la demo):** `docker compose up --build` desde la raíz y abrir
+http://localhost:8081. nginx sirve el build y manda `/api`, `/graphql` y `/ws` al gateway.
+
+**En desarrollo, con recarga en caliente:**
 
 ```bash
-# desde la raíz del repo: claves JWT (una vez) y Usuarios con su base
-bash infra/jwt/generar-claves.sh
-docker compose up --build usuarios
+# desde la raíz del repo, con el backend levantado
+bash infra/jwt/generar-claves.sh     # una sola vez
+docker compose up --build -d
 
-# en otra terminal
 cd web
 npm install
 npm run dev        # http://localhost:5173
 ```
 
-El proxy de Vite imita al gateway: la web siempre llama a `/api/usuarios/...`, `/graphql` y `/ws`.
-Sin gateway, `/api/usuarios` va directo a Usuarios (`localhost:3001`). Cuando el gateway esté listo,
-poné `PROXY_GATEWAY=http://localhost:8080` en `web/.env.local` y todo pasa por ahí.
+El proxy de Vite manda `/api`, `/graphql` y `/ws` al gateway (`localhost:8080`), igual que en producción.
 
 ## Variables
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `VITE_API_URL` | vacío | Base de la API; vacío = mismo origen |
-| `VITE_MOCK_COCHERAS` | `true` | Búsqueda con datos de ejemplo hasta integrar Cocheras |
-| `PROXY_USUARIOS` | `http://localhost:3001` | Solo dev: destino del proxy de Usuarios |
-| `PROXY_GATEWAY` | vacío | Solo dev: si tiene valor, todo va al gateway |
+| `VITE_API_URL` | vacío | Base de la API; vacío = mismo origen. En Vercel, la URL pública del gateway |
+| `VITE_MOCK_COCHERAS` | `false` | `true` = búsqueda con datos de ejemplo, para trabajar sin backend |
+| `PROXY_GATEWAY` | `http://localhost:8080` | Solo dev: destino del proxy de Vite |
+
+## Rutas
+
+| Ruta | Pantalla |
+|---|---|
+| `/ingresar`, `/registro` | Acceso |
+| `/buscar` | Mapa y tablero de cocheras libres para una franja |
+| `/cocheras/:id` | Ficha: zona, horarios, fotos y reserva |
+| `/reservas`, `/reservas/:id` | Reservas hechas y en tus cocheras; detalle con pago y cancelación |
+| `/mis-cocheras`, `/mis-cocheras/nueva`, `/mis-cocheras/:id` | Panel del propietario (requiere el rol) |
+| `/perfil` | Datos, roles y sesión |
 
 ## Sesión
 
 - El access token (15 min) vive solo en memoria; el refresh token en `localStorage` para sobrevivir recargas.
 - Si un pedido da 401, se refresca una vez y se reintenta.
-- El refresh token es de un solo uso (rotación con detección de reuso en Usuarios). Para no dispararla:
-  un solo refresh en vuelo por pestaña, un lock entre pestañas (`navigator.locks`) y el token se relee
-  adentro del lock. Usuarios además acepta un token recién rotado durante 30 s, por si la página se
-  recarga justo durante el refresh.
-- Cerrar sesión en una pestaña la cierra en las demás (evento `storage`).
-
-## Búsqueda
-
-`src/api/cocheras.js` pide a `/graphql` exactamente los campos del contrato
-(`buscarCocheras` → `id titulo precioHora tipoVehiculo ubicacionAproximada { lat lng }`).
-Mientras `VITE_MOCK_COCHERAS` no sea `false`, responde `src/mocks/cocheras.js`: datos sintéticos con
-la misma forma, marcados en pantalla como «Datos de ejemplo».
-
-El código corto de cada cochera (PO14) y el barrio se calculan en el front a partir del id y la
-ubicación aproximada, así no hace falta agregar campos al contrato.
+- El refresh token es de un solo uso. Para no disparar la detección de reuso de Usuarios: un solo
+  refresh en vuelo por pestaña, un lock entre pestañas (`navigator.locks`) y el token se relee adentro
+  del lock.
+- Cerrar sesión en una pestaña la cierra en las demás.
 
 ## Diseño
 
-El mundo visual es un tablero de partidas: valores en celdas de paleta (`src/componentes/Celdas.jsx`)
-que giran carácter por carácter cuando cambian, sobre negro paleta y acero. Ámbar = retenida y acción
-primaria, verde = confirmada, rojo = cancelada o vencida. La decisión y el contrato de dirección están
-en `.impeccable/`; el sistema documentado, en `DESIGN.md`.
+Tablero de partidas: valores en celdas de paleta (`src/componentes/Celdas.jsx`) que giran carácter por
+carácter cuando cambian. Ámbar = retenida y acción principal, verde = confirmada, rojo = cancelada o
+vencida. Sistema documentado en `DESIGN.md`; decisión y contrato de dirección en `.impeccable/`.
