@@ -20,7 +20,8 @@ Tres señales, todas con el mismo `traceId`.
 |---|---|
 | `reservas_http_requests_total{metodo,ruta,estado}` | Requests; la ruta es la plantilla (`/reservas/{reserva_id}`), no el id |
 | `reservas_http_request_duration_seconds` | Latencia (histograma, con bucket en 0.8 s) |
-| `reservas_creadas_total`, `reservas_confirmadas_total`, `reservas_expiradas_total` | Flujo de negocio |
+| `reservas_creadas_total`, `reservas_confirmadas_total`, `reservas_expiradas_total`, `reservas_finalizadas_total` | Flujo de negocio |
+| `reservas_consultas_cocheras_total{resultado}` | Consultas a Cocheras: `ok`, `no_encontrada` o `error` |
 | `reservas_canceladas_total{motivo}` | `cancelada_por_usuario` o `pago_rechazado` |
 | `reservas_conflictos_total` | Intentos rechazados por franja ocupada (409) |
 | `reservas_eventos_procesados_total{tipo,resultado}` | `aplicado`, `duplicado`, `ignorado` o `invalido` |

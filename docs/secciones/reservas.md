@@ -41,7 +41,7 @@ stateDiagram-v2
 
 Solo las reservas en `PENDIENTE_PAGO` y `CONFIRMADA` ocupan la franja. Cualquier otra transición se rechaza. Cada cambio de estado queda registrado en la tabla `reserva_historial`, como auditoría.
 
-> `FINALIZADA` existe en el modelo, pero todavía no hay un proceso que marque como finalizadas las reservas cuya franja terminó.
+> `FINALIZADA` la marca el mismo proceso periódico de la sección 8, una vez que termina la franja de una reserva confirmada. No publica evento: `reserva.finalizada` se agregará junto con su primer consumidor (las calificaciones), porque sin una cola enlazada el mensaje no tendría a dónde ir.
 
 ## 4. Concurrencia: por qué no puede haber una doble reserva
 
@@ -162,12 +162,14 @@ sequenceDiagram
 
 Un conflicto al reservar (`409`) se corta antes de publicar nada, así que no hay nada que deshacer.
 
-## 8. Retención y expiración
+## 8. Retención, expiración y finalización
 
 Al crear la reserva, la franja queda retenida 10 minutos (`expira_en`). Un proceso interno corre al arrancar y luego cada 60 segundos: pasa a `EXPIRADA` las reservas vencidas sin pago y publica `reserva.expirada`. Así, quien abandona el checkout no bloquea la cochera indefinidamente.
 
 - Con varias réplicas, `SKIP LOCKED` hace que cada una tome reservas distintas.
 - Si justo llega un `pago.aprobado` para una reserva que se está expirando, el bloqueo de fila decide quién va primero: la reserva termina confirmada o expirada, nunca ambas y con un solo evento de cierre. Hay un test con 20 reservas en esa carrera.
+- El mismo proceso pasa a `FINALIZADA` las reservas `CONFIRMADA` cuya franja ya terminó. Una reserva confirmada no puede cancelarse una vez comenzada, por lo que esa transición no compite con la cancelación.
+- No se aceptan reservas con `desde` en el pasado (`422`).
 - Como el proceso corre cada 60 segundos, una reserva puede seguir bloqueando la franja hasta un minuto después de su vencimiento. Es una demora aceptada.
 
 ## 9. Decisiones, límites y pendientes
@@ -180,7 +182,6 @@ Para ser honestos en la defensa, esto es lo que hoy **no** está resuelto o veri
 | Política de cancelación | Se puede cancelar mientras la reserva esté activa y no haya comenzado; no hay plazos ni reembolsos |
 | Dependencia de Cocheras | Sin Cocheras no se pueden crear reservas (`503`). No hay caché ni valores por defecto a propósito: el precio debe ser el vigente |
 | Pago tardío | Si llega `pago.aprobado` y la reserva ya estaba cancelada o expirada, se ignora con un aviso en el log, pero el cobro ya se hizo. Falta definir quién reembolsa |
-| `FINALIZADA` | No hay proceso que finalice reservas |
 | RabbitMQ y Docker | La lógica de mensajería está probada con la base real, pero la conexión con un broker real y la topología (`definitions.json`, DLQ) no se probaron todavía |
 | Observabilidad | Los eventos llevan `traceId` (desde el header `traceparent`) y hay `/health` y `/ready`. Faltan logs en JSON, métricas de Prometheus y trazas con OpenTelemetry |
 
