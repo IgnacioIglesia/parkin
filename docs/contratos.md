@@ -129,6 +129,42 @@ No usa JWT. La pasarela firma el cuerpo con HMAC-SHA256 usando `PASARELA_WEBHOOK
 
 Contenedor `pasarela-mock` (puerto 8090) que imita a Mercado Pago. La `checkoutUrl` abre una página con los botones **Aprobar** y **Rechazar**; al elegir, la pasarela llama al webhook. Para pruebas automáticas: `POST /checkout/{idExterno}/resultado` con `{ "estado": "approved" | "rejected" }`.
 
+### Pagos tardíos y reembolsos (implementado)
+
+El contrato original no decía qué pasa si se cobra algo que ya no corresponde. Pagos lo resuelve devolviendo la plata, siempre completa (la política de cancelación todavía no define plazos):
+
+| Situación | Qué hace Pagos |
+|---|---|
+| La reserva se cancela o expira mientras el pago está `PENDIENTE` | Lo cierra como `RECHAZADO` con `motivo` `reserva_cancelada` o `reserva_expirada` (no publica nada: Reservas ya cerró la reserva) |
+| La pasarela aprueba cuando la reserva ya está cancelada, expirada o finalizada | Lo deja `RECHAZADO` con `motivo: reserva_no_vigente`, publica `pago.rechazado` y **reembolsa** |
+| La pasarela aprueba un pago que Pagos ya había cerrado por `reserva_cancelada` o `reserva_expirada` (cobro tardío) | **Reembolsa** |
+| Se cancela una reserva ya pagada, o expira justo después de que se aprobó el pago | El pago sigue `APROBADO` y se **reembolsa** |
+
+- El reembolso es idempotente por orden. Si la pasarela falla, queda pendiente y Pagos lo reintenta cada 30 s.
+- `GET /pagos/{id}` agrega `reembolso: { "estado": "PENDIENTE" | "REEMBOLSADO" }` cuando corresponde.
+- Códigos de error que se suman a la tabla de `POST /pagos`: `409 IDEMPOTENCY_KEY_EN_USO` (esa clave ya se usó para otro pago u otra reserva) y `503 PASARELA_NO_DISPONIBLE` (el intento se anula sin avisar a Reservas, así la reserva se puede volver a pagar con otra `Idempotency-Key`). En `GET /pagos/{id}`: `404 PAGO_NO_ENCONTRADO` y `403 NO_ES_TU_PAGO`. En el webhook: `401 FIRMA_INVALIDA`.
+- El webhook devuelve `200 { "resultado": ... }` con `aprobado`, `rechazado`, `repetido`, `reembolso`, `desconocido` (referencia que no existe) o `no_coincide` (monto, moneda u orden distintos a los del pago; no se toca el pago).
+- Un pago por reserva: como máximo uno `PENDIENTE` o `APROBADO` a la vez (índice único parcial).
+
+### Avisos por WebSocket: a quién (implementado)
+
+Igual que en la tabla de la sección 8, con una precisión: `reserva:cancelada` le llega al propietario **solo si la reserva había llegado a confirmarse** (si nunca se confirmó, el propietario no sabía de ella). El payload de `reserva:cancelada` y `reserva:expirada` lleva `motivo` tal como lo publica Reservas.
+
+### Pasarela simulada: API (implementado)
+
+Servicio `pasarela-mock` (`PORT`, por defecto 8090). Sin dependencias; el estado vive en memoria.
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| POST | `/ordenes` | `{ referencia, monto, moneda, webhookUrl }` → `{ idExterno, checkoutUrl }`. Idempotente por `referencia` |
+| GET | `/checkout/{idExterno}` | Página con los botones **Aprobar** y **Rechazar** |
+| POST | `/checkout/{idExterno}/resultado` | `{ estado: "approved" \| "rejected", motivo? }`: resuelve la orden (una sola vez; después `409`) y llama al webhook firmado, con 4 intentos |
+| POST | `/ordenes/{idExterno}/reembolso` | Idempotente; solo órdenes aprobadas |
+
+- Variables: `PASARELA_WEBHOOK_SECRET` (el mismo en Pagos y en la pasarela) y `PASARELA_PUBLIC_URL`, la URL que ve el **navegador** para abrir el checkout (por defecto `http://localhost:8090`).
+- Variables de Pagos: `JWT_PUBLIC_KEY_PATH` (clave pública para verificar los tokens), `PASARELA_URL`, `PASARELA_WEBHOOK_SECRET`, `PAGOS_WEBHOOK_URL`, `RABBITMQ_URL` y `REDIS_URL`.
+- Pagos verifica el JWT por su cuenta (no solo confía en el gateway), porque el WebSocket manda el token en el handshake.
+
 ## 6. GraphQL: Cocheras (`/graphql`)
 
 ```graphql

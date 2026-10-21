@@ -16,5 +16,6 @@ scrape_configs:
   - job_name: reservas
     metrics_path: /metrics
     static_configs: [{ targets: ["reservas:8000"] }]
-  # - job_name: pagos
-  #   static_configs: [{ targets: ["pagos:3000"] }]
+  - job_name: pagos
+    metrics_path: /metrics
+    static_configs: [{ targets: ["pagos:3000"] }]

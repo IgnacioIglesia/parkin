@@ -25,3 +25,23 @@ groups:
         for: 5m
         annotations:
           resumen: "Más de 30% de las reservas de la última hora expiraron: posible problema con Pagos"
+
+  - name: pagos
+    rules:
+      - alert: PagosErroresAltos
+        expr: sum(rate(pagos_http_requests_total{estado=~"5.."}[5m])) / sum(rate(pagos_http_requests_total[5m])) > 0.02
+        for: 5m
+        annotations:
+          resumen: "Más de 2% de errores 5xx en Pagos durante 5 minutos"
+
+      - alert: PagosOutboxAcumulado
+        expr: pagos_outbox_pendientes > 100
+        for: 2m
+        annotations:
+          resumen: "Pagos tiene más de 100 eventos sin publicar: RabbitMQ caído o el publicador detenido"
+
+      - alert: PagosReembolsosConError
+        expr: increase(pagos_reembolsos_total{resultado="error"}[10m]) > 3
+        for: 5m
+        annotations:
+          resumen: "Fallan los reembolsos: hay personas con plata cobrada que no se está devolviendo"
