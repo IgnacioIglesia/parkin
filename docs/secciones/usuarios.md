@@ -104,5 +104,5 @@ El NGINX de código abierto no valida JWT por sí mismo (eso viene en NGINX Plus
 
 ## 9. Provisorio o pendiente
 
-- La configuración del gateway con `auth_request` está probada y documentada en `usuarios/README.md`; la integra Romina en `gateway/nginx.conf`.
+- El gateway valida el JWT por su cuenta, con la clave pública y sin llamar a Usuarios (`gateway/jwt.js`); el equipo eligió esa opción. `GET /auth/verificar` queda en Usuarios con el mismo contrato (`X-User-Id`, `X-User-Roles`), pero el gateway no lo usa.
 - `docs/contratos.md` §3 lista cinco endpoints; los demás de la sección 2 se proponen al contrato por PR.

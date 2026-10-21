@@ -179,18 +179,21 @@ Al crear la reserva, la franja queda retenida 10 minutos (`expira_en`). Un proce
 - No se aceptan reservas con `desde` en el pasado (`422`).
 - Como el proceso corre cada 60 segundos, una reserva puede seguir bloqueando la franja hasta un minuto después de su vencimiento. Es una demora aceptada.
 
-## 9. Decisiones, límites y pendientes
+## 9. Decisiones, límites y estado de lo que estaba pendiente
 
-Para ser honestos en la defensa, esto es lo que hoy **no** está resuelto o verificado:
+Para ser honestos en la defensa, esto es lo que se resolvió desde la primera versión y lo que sigue siendo un límite:
 
 | Tema | Estado |
 |---|---|
-| Identidad del usuario | Se lee del header `X-User-Id`, que debería poner el gateway tras validar el JWT. Falta confirmarlo con el responsable del gateway |
-| Política de cancelación | Se puede cancelar mientras la reserva esté activa y no haya comenzado; no hay plazos ni reembolsos |
-| Dependencia de Cocheras | Sin Cocheras no se pueden crear reservas (`503`). No hay caché ni valores por defecto a propósito: el precio debe ser el vigente |
-| Pago tardío | Si llega `pago.aprobado` y la reserva ya estaba cancelada o expirada, se ignora con un aviso en el log, pero el cobro ya se hizo. Falta definir quién reembolsa |
-| RabbitMQ y Docker | La lógica de mensajería está probada con la base real, pero la conexión con un broker real y la topología (`definitions.json`, DLQ) no se probaron todavía |
-| Observabilidad | Los eventos llevan `traceId` (desde el header `traceparent`) y hay `/health` y `/ready`. Faltan logs en JSON, métricas de Prometheus y trazas con OpenTelemetry |
+| Identidad del usuario | **Resuelto.** El gateway valida el JWT (RS256, con la clave pública) y pone `X-User-Id`, que siempre pisa lo que mande el cliente. Reservas confía en ese header. **Límite:** por eso Reservas solo debe ser accesible a través del gateway; el compose publica su puerto 8000 para desarrollo, y llamándolo directo se podría hacer pasar por otro usuario |
+| Pago tardío | **Resuelto.** Si llega `pago.aprobado` cuando la reserva ya estaba cancelada o expirada, Reservas lo ignora, y Pagos reembolsa automáticamente (ver `contratos.md`) |
+| RabbitMQ y Docker | **Resuelto.** Probado con un broker real en Docker: la topología (`definitions.json`), el límite de 3 entregas con envío a la DLQ, la idempotencia de los consumidores, y el flujo completo reservar, pagar y confirmar con Pagos real (incluso con Pagos caído: los eventos esperan en la cola) |
+| Observabilidad | **Resuelto.** Logs JSON con `traceId`, métricas de Prometheus con alertas, y trazas OpenTelemetry a Jaeger que continúan en Cocheras. **Límite:** Pagos todavía no exporta trazas, así que la traza se corta ahí |
+| Propietario y monto | **Resuelto.** Salen de Cocheras, no del cliente |
+| `FINALIZADA` | **Resuelto.** El mismo proceso periódico finaliza las reservas confirmadas cuya franja terminó |
+| Política de cancelación | **Límite.** Se puede cancelar mientras la reserva esté activa y no haya comenzado, y se reembolsa completo; no hay plazos |
+| Dependencia de Cocheras | **Límite, a propósito.** Sin Cocheras no se pueden crear reservas (`503`). No hay caché ni valores por defecto: el precio debe ser el vigente |
+| Varias réplicas | **Límite.** El diseño lo permite (sin estado en memoria, `SKIP LOCKED` en las tareas periódicas, lock por cochera), pero no se probó con más de una réplica de Reservas |
 
 ## 10. Pruebas
 
