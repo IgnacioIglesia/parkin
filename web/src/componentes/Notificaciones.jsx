@@ -2,7 +2,7 @@ import { X } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { io } from 'socket.io-client';
-import { accessTokenActual } from '../api/http.js';
+import { accessTokenActual, refrescar } from '../api/http.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { TONO_ESTADO } from '../utilidades/formato.js';
 import { Celdas } from './Celdas.jsx';
@@ -72,6 +72,13 @@ export function NotificacionesProvider({ children }) {
       path: '/ws',
       auth: (cb) => cb({ token: accessTokenActual() }),
       reconnectionDelayMax: 30_000,
+    });
+    // Si Pagos rechaza el handshake porque el token venció, Socket.IO no reintenta solo:
+    // se refresca la sesión y se reconecta (auth vuelve a leer el token vigente).
+    socket.on('connect_error', async (err) => {
+      if (err.message !== 'TOKEN_INVALIDO') return;
+      const sesion = await refrescar().catch(() => null);
+      if (sesion) socket.connect();
     });
     for (const [evento, info] of Object.entries(EVENTOS)) {
       socket.on(evento, (datos = {}) => {

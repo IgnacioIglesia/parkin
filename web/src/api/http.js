@@ -67,10 +67,11 @@ const CODIGO_POR_ESTADO = {
 };
 
 // Cada servicio responde sus errores a su manera: Usuarios { error: { codigo, mensaje } },
-// Reservas (FastAPI) { detail: "..." } o { detail: [{ loc, msg }] }, y el gateway HTML.
+// Pagos { error: "CODIGO", mensaje }, Reservas (FastAPI) { detail: "..." } o
+// { detail: [{ loc, msg }] }, y el gateway HTML o { codigo, mensaje }.
 function errorDesde(status, datos) {
-  const error = datos?.error ?? {};
-  let { codigo, mensaje, detalles = [] } = error;
+  const error = typeof datos?.error === 'string' ? { codigo: datos.error, mensaje: datos.mensaje } : (datos?.error ?? {});
+  let { codigo = datos?.codigo, mensaje = datos?.mensaje, detalles = [] } = error;
   if (!mensaje && typeof datos?.detail === 'string') mensaje = datos.detail;
   if (!mensaje && Array.isArray(datos?.detail)) {
     mensaje = 'Revisá los datos marcados.';
