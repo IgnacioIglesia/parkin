@@ -1,0 +1,3 @@
+{
+  "rewrites": [{ "source": "/((?!api|graphql|ws|assets).*)", "destination": "/index.html" }]
+}
