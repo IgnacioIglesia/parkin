@@ -116,13 +116,26 @@ test('la misma clave para otro usuario u otra reserva → 409 IDEMPOTENCY_KEY_EN
   assert.equal(otroUsuario.status, 409);
 });
 
-test('con otra clave, mientras hay un pago pendiente → 409 PAGO_EN_CURSO', async () => {
+test('con otra clave, mientras hay un pago pendiente, devuelve ese mismo pago (200) con su checkout', async () => {
   const reserva = await reservaConocida(procesador);
   const token = tokenDe(reserva.conductorId);
-  assert.equal((await post(token, reserva.reservaId)).status, 201);
+  const primero = await post(token, reserva.reservaId);
   const segundo = await post(token, reserva.reservaId);
-  assert.equal(segundo.status, 409);
-  assert.equal(segundo.body.error.codigo, 'PAGO_EN_CURSO');
+  assert.equal(primero.status, 201);
+  assert.equal(segundo.status, 200);
+  assert.deepEqual(segundo.body, primero.body);
+  assert.equal(pasarela.llamadasCrear, 1, 'no se crea otra orden en la pasarela');
+  assert.equal((await pool.query('SELECT count(*)::int n FROM pago')).rows[0].n, 1);
+});
+
+test('si el pago ya está aprobado, otro intento → 409 PAGO_EN_CURSO', async () => {
+  const reserva = await reservaConocida(procesador);
+  const token = tokenDe(reserva.conductorId);
+  const primero = await post(token, reserva.reservaId);
+  await pool.query(`UPDATE pago SET estado = 'APROBADO' WHERE id = $1`, [primero.body.pagoId]);
+  const otro = await post(token, reserva.reservaId);
+  assert.equal(otro.status, 409);
+  assert.equal(otro.body.error.codigo, 'PAGO_EN_CURSO');
 });
 
 test('20 pedidos simultáneos con la misma clave crean un solo pago', async () => {
@@ -137,13 +150,15 @@ test('20 pedidos simultáneos con la misma clave crean un solo pago', async () =
   assert.equal(pasarela.ordenes.size, 1);
 });
 
-test('20 pedidos simultáneos con claves distintas: uno gana y el resto recibe PAGO_EN_CURSO', async () => {
+test('20 pedidos simultáneos con claves distintas: un solo pago, una sola orden, todos reciben el mismo', async () => {
   const reserva = await reservaConocida(procesador);
   const token = tokenDe(reserva.conductorId);
   const respuestas = await Promise.all(Array.from({ length: 20 }, () => post(token, reserva.reservaId)));
+  assert.ok(respuestas.every((r) => [200, 201].includes(r.status)), respuestas.map((r) => r.status).join());
   assert.equal(respuestas.filter((r) => r.status === 201).length, 1);
-  assert.equal(respuestas.filter((r) => r.status === 409).length, 19);
+  assert.equal(new Set(respuestas.map((r) => r.body.pagoId)).size, 1);
   assert.equal((await pool.query('SELECT count(*)::int n FROM pago')).rows[0].n, 1);
+  assert.equal(pasarela.ordenes.size, 1);
 });
 
 test('si la pasarela no responde → 503, el intento se anula sin avisar a Reservas y se puede reintentar', async () => {

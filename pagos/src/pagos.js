@@ -40,8 +40,10 @@ export function crearServicioPagos({ pool, pasarela, notificar, logger, config, 
   async function crearPago({ usuarioId, reservaId, idempotencyKey, traceId }) {
     let creado = false;
     let pago = await enTransaccion(pool, async (db) => {
-      // Serializa los reintentos simultáneos con la misma Idempotency-Key.
+      // Serializa los reintentos simultáneos con la misma Idempotency-Key, y los pedidos de pago
+      // simultáneos de una misma reserva (aunque traigan claves distintas).
       await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [idempotencyKey]);
+      await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 1))', [reservaId]);
 
       const existente = await repo.pagoPorClave(db, idempotencyKey);
       if (existente) {
@@ -62,15 +64,22 @@ export function crearServicioPagos({ pool, pasarela, notificar, logger, config, 
         throw new ErrorHttp(409, 'RESERVA_NO_PAGABLE', 'La reserva ya no se puede pagar');
       }
 
+      // Como máximo un pago vivo por reserva. Si ya hay uno pendiente (el usuario cerró la página
+      // de la pasarela y volvió a tocar "Pagar") se devuelve ese, con su misma URL de checkout.
+      // Si ya está aprobado, no hay nada más que cobrar.
+      const vivo = await repo.pagoVivoDeReserva(db, reservaId);
+      if (vivo?.estado === 'PENDIENTE') return vivo;
+      if (vivo) throw new ErrorHttp(409, 'PAGO_EN_CURSO', 'Esa reserva ya tiene un pago aprobado');
+
       try {
         creado = true;
         return await repo.insertarPago(db, {
           reservaId, usuarioId, monto: reserva.monto, moneda: reserva.moneda, idempotencyKey,
         });
       } catch (err) {
-        // Índice único: como máximo un pago vivo (pendiente o aprobado) por reserva.
+        // Red de seguridad: el índice único impide dos pagos vivos aunque falle el bloqueo de arriba.
         if (err.code === '23505') {
-          throw new ErrorHttp(409, 'PAGO_EN_CURSO', 'Ya hay un pago pendiente o aprobado para esa reserva');
+          throw new ErrorHttp(409, 'PAGO_EN_CURSO', 'Ya hay un pago en curso para esa reserva');
         }
         throw err;
       }

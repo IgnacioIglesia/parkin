@@ -97,7 +97,7 @@ Respuesta `201` (o `200` si la `Idempotency-Key` ya se había usado):
 | 403 | `NO_ES_TU_RESERVA` | El `sub` del token no es el conductor de la reserva |
 | 404 | `RESERVA_DESCONOCIDA` | Pagos todavía no recibió `reserva.creada`; el front reintenta en unos segundos |
 | 409 | `RESERVA_EXPIRADA` | Ya pasó `expiraEn` o llegó `reserva.expirada` / `reserva.cancelada` |
-| 409 | `PAGO_EN_CURSO` | Ya hay un pago pendiente o aprobado para esa reserva |
+| 409 | `PAGO_EN_CURSO` | La reserva ya tiene un pago **aprobado**. Si hay uno pendiente, no es error: se devuelve ese mismo pago con `200` y su `checkoutUrl` (el usuario cerró la pasarela y volvió a tocar «Pagar») |
 | 422 | `DATOS_INVALIDOS` | Falta `reservaId`, no es UUID o falta `Idempotency-Key` |
 
 Los errores siempre tienen la forma `{ "error": "CODIGO", "mensaje": "...", "traceId": "..." }`.
@@ -144,7 +144,7 @@ El contrato original no decía qué pasa si se cobra algo que ya no corresponde.
 - `GET /pagos/{id}` agrega `reembolso: { "estado": "PENDIENTE" | "REEMBOLSADO" }` cuando corresponde.
 - Códigos de error que se suman a la tabla de `POST /pagos`: `409 IDEMPOTENCY_KEY_EN_USO` (esa clave ya se usó para otro pago u otra reserva) y `503 PASARELA_NO_DISPONIBLE` (el intento se anula sin avisar a Reservas, así la reserva se puede volver a pagar con otra `Idempotency-Key`). En `GET /pagos/{id}`: `404 PAGO_NO_ENCONTRADO` y `403 NO_ES_TU_PAGO`. En el webhook: `401 FIRMA_INVALIDA`.
 - El webhook devuelve `200 { "resultado": ... }` con `aprobado`, `rechazado`, `repetido`, `reembolso`, `desconocido` (referencia que no existe) o `no_coincide` (monto, moneda u orden distintos a los del pago; no se toca el pago).
-- Un pago por reserva: como máximo uno `PENDIENTE` o `APROBADO` a la vez (índice único parcial).
+- Un pago por reserva: como máximo uno `PENDIENTE` o `APROBADO` a la vez (índice único parcial). Los pedidos de pago de una misma reserva se serializan, así que 20 clics simultáneos, aunque lleven claves distintas, crean un solo pago y una sola orden en la pasarela.
 
 ### Avisos por WebSocket: a quién (implementado)
 
