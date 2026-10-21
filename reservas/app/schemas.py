@@ -1,15 +1,12 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from pydantic import BaseModel, model_validator
 
 
 class ReservaIn(BaseModel):
+    # El propietario y el monto no los manda el cliente: Reservas los obtiene de Cocheras.
     cochera_id: UUID
-    # Provisorio: cuando Cocheras exponga su API, propietario y monto se obtienen de ahí
-    # en lugar de confiar en el cliente.
-    propietario_id: UUID
-    monto: float
     desde: datetime
     hasta: datetime
 
@@ -17,10 +14,10 @@ class ReservaIn(BaseModel):
     def validar_franja(self):
         if self.desde.tzinfo is None or self.hasta.tzinfo is None:
             raise ValueError("desde y hasta deben incluir zona horaria")
+        if self.desde <= datetime.now(timezone.utc):
+            raise ValueError("desde debe ser una fecha futura")
         if self.hasta <= self.desde:
             raise ValueError("hasta debe ser posterior a desde")
-        if self.monto < 0:
-            raise ValueError("monto no puede ser negativo")
         return self
 
 

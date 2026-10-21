@@ -26,7 +26,6 @@ services:
     restart: unless-stopped
 
   cocheras:
-    profiles: ["pendiente"]
     build: ./cocheras
     environment:
       DATABASE_URL: postgres://app:app@db-cocheras:5432/cocheras
@@ -45,6 +44,7 @@ services:
       DATABASE_URL: postgres://app:app@db-reservas:5432/reservas
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       RETENCION_MINUTOS: "10"
+      COCHERAS_URL: http://cocheras:4000
     ports: ["8000:8000"]
     depends_on:
       db-reservas: { condition: service_healthy }

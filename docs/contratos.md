@@ -48,13 +48,15 @@ Cómo llegan las rutas a cada servicio (implementado en `gateway/nginx.conf`):
 
 | Método | Endpoint | Descripción |
 |---|---|---|
-| POST | `/reservas` | Crea reserva en `PENDIENTE_PAGO`. Requiere header `Idempotency-Key` (UUID) |
+| POST | `/reservas` | Crea reserva en `PENDIENTE_PAGO`. Body: `{ cochera_id, desde, hasta }`. Requiere header `Idempotency-Key` (UUID) |
 | GET | `/reservas/{id}` | Estado de una reserva (fuente de verdad) |
 | GET | `/reservas?rol=conductor` | Reservas del usuario |
 | POST | `/reservas/{id}/cancelar` | Cancela según la política |
 | GET | `/cocheras/{id}/ocupacion?desde&hasta` | Franjas ocupadas, usada por la búsqueda |
 
-Códigos: `201` reserva creada, `409` franja ocupada, `422` datos inválidos.
+Códigos: `201` reserva creada, `200` reintento con la misma `Idempotency-Key`, `404` la cochera no existe, `409` franja ocupada, `422` datos inválidos, `503` no se pudo consultar a Cocheras.
+
+**El cliente no manda el propietario ni el monto.** Reservas los obtiene de Cocheras con la query `cochera(id: $id) { propietario { id } precioHora }` (síncrona, timeout de 3 s, propaga el `traceparent`) y calcula `monto = precioHora × horas de la franja`, con centavos (90 min a $100/h son $150). Si el body incluye `propietario_id` o `monto`, se ignoran. Un reintento con una `Idempotency-Key` ya usada devuelve la reserva existente sin consultar a Cocheras.
 
 Estados: `PENDIENTE_PAGO` → `CONFIRMADA` | `CANCELADA` | `EXPIRADA`; `CONFIRMADA` → `FINALIZADA`.
 
