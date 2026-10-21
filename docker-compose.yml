@@ -12,7 +12,6 @@ services:
     restart: unless-stopped
 
   usuarios:
-    profiles: ["pendiente"]
     build: ./usuarios
     environment:
       PORT: "3000"
@@ -47,6 +46,7 @@ services:
       DATABASE_URL: postgres://app:app@db-reservas:5432/reservas
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       RETENCION_MINUTOS: "10"
+      COCHERAS_URL: http://cocheras:4000
     ports: ["8000:8000"]
     depends_on:
       db-reservas: { condition: service_healthy }
@@ -54,7 +54,6 @@ services:
     restart: unless-stopped
 
   pagos:
-    profiles: ["pendiente"]
     build: ./pagos
     environment:
       PORT: "3000"
@@ -62,7 +61,9 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       REDIS_URL: redis://redis:6379
       PASARELA_ACCESS_TOKEN: ${PASARELA_ACCESS_TOKEN:-}
-    ports: ["3002:3000"]
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    # Puerto expuesto solo para probar sin gateway; se quita cuando el gateway rutee /api/pagos
+    ports: ["8084:3000"]
     depends_on:
       db-pagos: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -171,7 +172,7 @@ services:
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    ports: ["3000:3000"]
+    ports: ["3030:3000"]  # 3030 y no 3000, que suele estar ocupado por servidores de desarrollo
     depends_on: [prometheus, loki, jaeger]
 
 volumes:

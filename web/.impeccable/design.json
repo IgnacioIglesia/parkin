@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-21T00:00:00Z",
+  "title": "Design System: ParkIN",
+  "extensions": {
+    "colorMeta": {
+      "acero":   { "role": "neutral",   "displayName": "Marco de Acero",       "canonical": "oklch(29.6% 0.008 255.6)", "tonalRamp": ["#090b0f", "#212428", "#3d4044", "#5b5e62", "#7b7d81", "#9c9fa2", "#c2c4c7", "#edeef1"] },
+      "paleta":  { "role": "neutral",   "displayName": "Negro Paleta",         "canonical": "oklch(15.1% 0.004 285.9)", "tonalRamp": ["#0b0b0d", "#242426", "#3f3f42", "#5d5d5f", "#7d7d7f", "#9e9ea0", "#c4c4c5", "#eeeeef"] },
+      "celda":   { "role": "neutral",   "displayName": "Celda",                "canonical": "oklch(20.9% 0.006 271.1)", "tonalRamp": ["#0a0b0e", "#232427", "#3e4043", "#5c5d60", "#7c7d80", "#9d9ea0", "#c3c4c6", "#eeeef0"] },
+      "costura": { "role": "neutral",   "displayName": "Costura",              "canonical": "oklch(48.1% 0.009 260.7)", "tonalRamp": ["#0a0b0e", "#222428", "#3d4044", "#5b5e63", "#7a7d83", "#9c9ea3", "#c2c4c8", "#eceef2"] },
+      "tenue":   { "role": "neutral",   "displayName": "Acero Claro",          "canonical": "oklch(73.7% 0.008 260.7)", "tonalRamp": ["#0a0b0d", "#232426", "#3e4043", "#5b5e61", "#7b7d82", "#9c9fa3", "#c1c4c9", "#eceff3"] },
+      "letra":   { "role": "neutral",   "displayName": "Letra Blanca",         "canonical": "oklch(96.1% 0 0)",         "tonalRamp": ["#0b0b0b", "#242424", "#404040", "#5d5d5d", "#7d7d7d", "#9e9e9e", "#c4c4c4", "#eeeeee"] },
+      "ambar":   { "role": "primary",   "displayName": "Ámbar de Señal",       "canonical": "oklch(81.2% 0.170 76.4)",  "tonalRamp": ["#190500", "#3a1c00", "#5e3500", "#845100", "#ad6e00", "#d88d00", "#ffb20c", "#ffdf62"] },
+      "verde":   { "role": "secondary", "displayName": "Verde de Confirmación", "canonical": "oklch(77.9% 0.165 157.3)", "tonalRamp": ["#001202", "#002f11", "#005027", "#00723f", "#009659", "#02bc74", "#4fe499", "#8effc6"] },
+      "rojo":    { "role": "tertiary",  "displayName": "Rojo de Corte",        "canonical": "oklch(65.4% 0.195 25.9)",  "tonalRamp": ["#2a0000", "#520000", "#7d000b", "#ab1c21", "#d93b3a", "#ff625b", "#ff9086", "#ffc5b9"] }
+    },
+    "typographyMeta": {
+      "display":          { "displayName": "Display", "purpose": "Título en celdas de ingreso y registro; contador del tablero en la misma voz." },
+      "headline":         { "displayName": "Headline", "purpose": "Encabezado del tablero junto al contador en celdas." },
+      "headline-lectura": { "displayName": "Headline de lectura", "purpose": "Nombres propios en Barlow minúscula, como el nombre en Perfil." },
+      "title":            { "displayName": "Title", "purpose": "Títulos de sección en mayúscula condensada." },
+      "celda":            { "displayName": "Celda", "purpose": "Caracteres de las celdas de paleta en filas del tablero." },
+      "body":             { "displayName": "Body", "purpose": "Lectura general en Barlow minúscula." },
+      "body-tablero":     { "displayName": "Body de tablero", "purpose": "Títulos de cochera dentro de las filas del tablero." },
+      "label":            { "displayName": "Label (etiqueta)", "purpose": "Etiquetas de campo y encabezados de columna, en acero claro." },
+      "button":           { "displayName": "Button", "purpose": "Texto de todos los botones." }
+    },
+    "shadows": [
+      { "name": "placa-mapa", "value": "0 3px 10px rgb(0 0 0 / 0.55)", "purpose": "Solo para las placas de cochera sobre las teselas del mapa." },
+      { "name": "anillo-foco-campo", "value": "0 0 0 1px var(--color-ambar)", "purpose": "Engrosa el borde ámbar del campo con foco; no es elevación." }
+    ],
+    "motion": [
+      { "name": "ease-salida", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Curva del giro de celda (token --ease-salida)." },
+      { "name": "giro-celda", "value": "300ms, 28ms de retraso por carácter", "purpose": "Giro rotateX(-95deg) a 0 con brillo de 0.35 a 1; desactivado con prefers-reduced-motion." },
+      { "name": "cambio-estado", "value": "150ms", "purpose": "Transición de color, borde y fondo en botones, campos y cajas." },
+      { "name": "vuelo-mapa", "value": "0.6s", "purpose": "flyTo/flyToBounds al encuadrar una búsqueda nueva; sin animación con prefers-reduced-motion." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botón primario",
+      "kind": "button",
+      "refersTo": "boton-primario",
+      "description": "Acción principal de cada pantalla («Buscá», «Ingresá»); ámbar pleno.",
+      "html": "<button class=\"ds-boton ds-boton-primario\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/></svg>Buscá</button>",
+      "css": ".ds-boton { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; font-family: 'Barlow Condensed', 'Barlow', ui-sans-serif, sans-serif; font-weight: 700; font-size: 1.0625rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.7rem 1.25rem; border-radius: 2px; border: 1px solid transparent; cursor: pointer; transition: background-color 150ms, border-color 150ms, color 150ms; } .ds-boton:focus-visible { outline: 2px solid #ffb000; outline-offset: 2px; } .ds-boton-primario { background: #ffb000; color: #0b0b0d; } .ds-boton-primario:hover { background: #ffc340; }"
+    },
+    {
+      "name": "Botón secundario",
+      "kind": "button",
+      "refersTo": "boton-secundario",
+      "description": "Acciones de segundo orden («Sumá este rol», «Cerrá sesión»).",
+      "html": "<button class=\"ds-boton-sec\">Sumá este rol</button>",
+      "css": ".ds-boton-sec { display: inline-flex; align-items: center; justify-content: center; font-family: 'Barlow Condensed', 'Barlow', ui-sans-serif, sans-serif; font-weight: 700; font-size: 1.0625rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.7rem 1.25rem; border-radius: 2px; background: transparent; color: #f2f2f2; border: 1px solid #5b5e63; cursor: pointer; transition: background-color 150ms, border-color 150ms; } .ds-boton-sec:hover { border-color: #a7aaaf; background: #0b0b0d; } .ds-boton-sec:focus-visible { outline: 2px solid #ffb000; outline-offset: 2px; }"
+    },
+    {
+      "name": "Botón de peligro",
+      "kind": "button",
+      "refersTo": "boton-peligro",
+      "description": "Acción destructiva aislada y con confirmación en el lugar.",
+      "html": "<button class=\"ds-boton-peligro\">Cerrá todas las sesiones</button>",
+      "css": ".ds-boton-peligro { display: inline-flex; align-items: center; font-family: 'Barlow Condensed', 'Barlow', ui-sans-serif, sans-serif; font-weight: 700; font-size: 1.0625rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.7rem 1.25rem; border-radius: 2px; background: transparent; color: #f0524d; border: 1px solid rgb(240 82 77 / 0.5); cursor: pointer; transition: background-color 150ms, border-color 150ms; } .ds-boton-peligro:hover, .ds-boton-peligro:focus-visible { background: rgb(240 82 77 / 0.12); border-color: #f0524d; } .ds-boton-peligro:focus-visible { outline: 2px solid #ffb000; outline-offset: 2px; }"
+    },
+    {
+      "name": "Botón inactivo",
+      "kind": "button",
+      "refersTo": "boton-inactivo",
+      "description": "Cualquier botón deshabilitado: transparente con borde punteado.",
+      "html": "<button class=\"ds-boton-inactivo\" disabled>Reservá esta franja</button>",
+      "css": ".ds-boton-inactivo { display: inline-flex; align-items: center; justify-content: center; font-family: 'Barlow Condensed', 'Barlow', ui-sans-serif, sans-serif; font-weight: 700; font-size: 1.0625rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.7rem 1.25rem; border-radius: 2px; background: transparent; color: #a7aaaf; border: 1px dashed #5b5e63; cursor: not-allowed; }"
+    },
+    {
+      "name": "Campo",
+      "kind": "input",
+      "refersTo": "campo",
+      "description": "Campo de formulario con etiqueta arriba; foco ámbar, error rojo.",
+      "html": "<label class=\"ds-campo-envoltura\"><span class=\"ds-etiqueta\">Email</span><input class=\"ds-campo\" type=\"email\" placeholder=\"vos@ejemplo.uy\"></label>",
+      "css": ".ds-campo-envoltura { display: flex; flex-direction: column; gap: 0.375rem; } .ds-etiqueta { font-family: 'Barlow Condensed', 'Barlow', ui-sans-serif, sans-serif; font-weight: 600; font-size: 0.875rem; letter-spacing: 0.08em; text-transform: uppercase; color: #a7aaaf; } .ds-campo { width: 100%; background: #0b0b0d; border: 1px solid #5b5e63; border-radius: 2px; padding: 0.7rem 0.85rem; font-family: 'Barlow', ui-sans-serif, sans-serif; font-size: 1rem; color: #f2f2f2; caret-color: #ffb000; transition: border-color 150ms; } .ds-campo::placeholder { color: #8b8e93; } .ds-campo:hover { border-color: #a7aaaf; } .ds-campo:focus-visible { outline: none; border-color: #ffb000; box-shadow: 0 0 0 1px #ffb000; } .ds-campo[aria-invalid='true'] { border-color: #f0524d; }"
+    },
+    {
+      "name": "Caja de la barra",
+      "kind": "input",
+      "refersTo": "caja",
+      "description": "Campo compacto con la etiqueta adentro, para la búsqueda en la barra superior.",
+      "html": "<label class=\"ds-caja\"><span class=\"ds-caja-etiqueta\">Dónde</span><select><option>Pocitos</option><option>Cordón</option></select></label>",
+      "css": ".ds-caja { display: flex; flex-direction: column; gap: 2px; min-width: 0; background: #17181b; border: 1px solid #303237; border-radius: 2px; padding: 5px 10px 6px; transition: border-color 150ms; } .ds-caja:hover { border-color: #5b5e63; } .ds-caja:focus-within { border-color: #ffb000; } .ds-caja-etiqueta { font-family: 'Barlow Condensed', 'Barlow', ui-sans-serif, sans-serif; font-weight: 600; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: #a7aaaf; } .ds-caja select { width: 100%; background: transparent; border: 0; padding: 0; color: #f2f2f2; font-family: 'Barlow', ui-sans-serif, sans-serif; font-size: 0.975rem; outline: none; } .ds-caja option { background: #0b0b0d; }"
+    },
+    {
+      "name": "Navegación de la barra",
+      "kind": "nav",
+      "refersTo": "barra-superior",
+      "description": "Barra negra con marca en celdas y pestañas con subrayado ámbar en la activa.",
+      "html": "<nav class=\"ds-barra\"><span class=\"ds-marca\"><span class=\"ds-c\">P</span><span class=\"ds-c\">A</span><span class=\"ds-c\">R</span><span class=\"ds-c\">K</span><span class=\"ds-c ds-c-ambar\">I</span><span class=\"ds-c ds-c-ambar\">N</span></span><span class=\"ds-tabs\"><a class=\"ds-tab ds-tab-activa\" href=\"#\">Mapa</a><a class=\"ds-tab\" href=\"#\">Martina</a></span></nav>",
+      "css": ".ds-barra { display: flex; align-items: center; justify-content: space-between; height: 72px; padding: 0 24px; background: #0b0b0d; border-bottom: 1px solid #1f2024; } .ds-marca { display: inline-flex; gap: 0.1em; font-size: 1.5rem; } .ds-c { position: relative; display: inline-grid; place-items: center; width: 0.74em; height: 1.16em; background: #17181b; border-radius: 2px; font-family: 'Barlow Condensed', 'Barlow', sans-serif; font-weight: 600; line-height: 1; color: #f2f2f2; overflow: hidden; } .ds-c::after { content: ''; position: absolute; inset-inline: 0; top: 50%; height: 1px; background: rgb(0 0 0 / 0.8); } .ds-c-ambar { color: #ffb000; } .ds-tabs { display: flex; gap: 4px; } .ds-tab { display: inline-flex; align-items: center; height: 44px; padding: 0 12px; border-bottom: 2px solid transparent; font-family: 'Barlow Condensed', 'Barlow', sans-serif; font-weight: 600; font-size: 1rem; letter-spacing: 0.08em; text-transform: uppercase; color: #a7aaaf; text-decoration: none; transition: color 150ms; } .ds-tab:hover { color: #f2f2f2; } .ds-tab:focus-visible { outline: 2px solid #ffb000; outline-offset: 2px; } .ds-tab-activa { color: #f2f2f2; border-bottom-color: #ffb000; }"
+    },
+    {
+      "name": "Celdas de paleta",
+      "kind": "custom",
+      "refersTo": "celda",
+      "description": "Firma del sistema: cada carácter en su celda con bisagra; gira en cascada cuando cambia.",
+      "html": "<span class=\"ds-celdas\"><span class=\"ds-celda\"><span>C</span></span><span class=\"ds-celda\"><span>O</span></span><span class=\"ds-celda\"><span>N</span></span><span class=\"ds-celda\"><span>F</span></span><span class=\"ds-celda\"><span>I</span></span><span class=\"ds-celda\"><span>R</span></span><span class=\"ds-celda\"><span>M</span></span><span class=\"ds-celda\"><span>A</span></span><span class=\"ds-celda\"><span>D</span></span><span class=\"ds-celda\"><span>A</span></span></span>",
+      "css": ".ds-celdas { display: inline-flex; gap: 0.1em; font-size: 1.375rem; color: #3dd68c; } .ds-celda { position: relative; display: inline-grid; place-items: center; width: 0.74em; height: 1.16em; background: #17181b; border-radius: 2px; font-family: 'Barlow Condensed', 'Barlow', sans-serif; font-weight: 600; line-height: 1; overflow: hidden; perspective: 12em; } .ds-celda::after { content: ''; position: absolute; inset-inline: 0; top: 50%; height: 1px; background: rgb(0 0 0 / 0.8); } .ds-celda > span { display: block; animation: ds-giro 300ms cubic-bezier(0.16, 1, 0.3, 1) both; } .ds-celda:nth-child(2) > span { animation-delay: 28ms; } .ds-celda:nth-child(3) > span { animation-delay: 56ms; } .ds-celda:nth-child(4) > span { animation-delay: 84ms; } .ds-celda:nth-child(5) > span { animation-delay: 112ms; } .ds-celda:nth-child(6) > span { animation-delay: 140ms; } .ds-celda:nth-child(7) > span { animation-delay: 168ms; } .ds-celda:nth-child(8) > span { animation-delay: 196ms; } .ds-celda:nth-child(9) > span { animation-delay: 224ms; } .ds-celda:nth-child(10) > span { animation-delay: 252ms; } @keyframes ds-giro { from { transform: rotateX(-95deg); filter: brightness(0.35); } to { transform: none; filter: none; } } @media (prefers-reduced-motion: reduce) { .ds-celda > span { animation: none; } }"
+    },
+    {
+      "name": "Fila del tablero",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Renglón fijo del tablero; la seleccionada lleva fondo ámbar al 10% y contorno ámbar.",
+      "html": "<table class=\"ds-tablero\"><thead><tr><th>Código</th><th>Cochera</th><th class=\"ds-der\">Por hora</th></tr></thead><tbody><tr class=\"ds-fila-sel\"><td class=\"ds-cod ds-ambar\">PO14</td><td>Garaje en edificio, techado<div class=\"ds-sub\">Pocitos · 250 m</div></td><td class=\"ds-der ds-cod\">$90</td></tr><tr><td class=\"ds-cod\">PO11</td><td>Cochera en casa, portón eléctrico<div class=\"ds-sub\">Pocitos · 350 m</div></td><td class=\"ds-der ds-cod\">$75</td></tr></tbody></table>",
+      "css": ".ds-tablero { width: 100%; border-collapse: collapse; background: #0b0b0d; color: #f2f2f2; font-family: 'Barlow', sans-serif; font-size: 1.0625rem; text-align: left; } .ds-tablero th { padding: 12px 8px 12px 20px; font-family: 'Barlow Condensed', 'Barlow', sans-serif; font-weight: 600; font-size: 0.875rem; letter-spacing: 0.08em; text-transform: uppercase; color: #a7aaaf; } .ds-tablero td { padding: 12px 8px 12px 20px; border-top: 1px solid #1d1e22; font-weight: 500; } .ds-tablero tbody tr { cursor: pointer; } .ds-tablero tbody tr:hover { background: #17181b; } .ds-fila-sel, .ds-fila-sel:hover { background: rgb(255 176 0 / 0.1) !important; outline: 1px solid #ffb000; outline-offset: -1px; } .ds-cod { font-family: 'Barlow Condensed', 'Barlow', sans-serif; font-weight: 600; font-size: 1.375rem; letter-spacing: 0.3em; font-variant-numeric: tabular-nums; } .ds-ambar { color: #ffb000; } .ds-sub { font-size: 0.9375rem; font-weight: 400; color: #a7aaaf; } .ds-der { text-align: right; }"
+    },
+    {
+      "name": "Placa de mapa",
+      "kind": "custom",
+      "refersTo": "placa",
+      "description": "Pin rectangular con código y precio, partido por la bisagra; ámbar cuando está seleccionado.",
+      "html": "<div class=\"ds-mapa\"><span class=\"ds-placa\">PO12 · $110</span><span class=\"ds-placa ds-placa-sel\">PO14 · $90</span></div>",
+      "css": ".ds-mapa { display: flex; gap: 24px; padding: 24px 16px 32px; background: #1b1c1f; } .ds-placa { position: relative; white-space: nowrap; background: linear-gradient(to bottom, #17181b calc(50% - 0.5px), #000 calc(50% - 0.5px) calc(50% + 0.5px), #17181b calc(50% + 0.5px)); color: #f2f2f2; border: 1px solid #5b5e63; border-radius: 2px; padding: 4px 9px; font-family: 'Barlow Condensed', 'Barlow', sans-serif; font-weight: 600; font-size: 15px; letter-spacing: 0.06em; box-shadow: 0 3px 10px rgb(0 0 0 / 0.55); cursor: pointer; } .ds-placa::after { content: ''; position: absolute; left: 50%; bottom: -6px; translate: -50% 0; border: 6px solid transparent; border-bottom: 0; border-top-color: #5b5e63; } .ds-placa-sel { background: linear-gradient(to bottom, #ffb000 calc(50% - 0.5px), rgb(0 0 0 / 0.45) calc(50% - 0.5px) calc(50% + 0.5px), #ffb000 calc(50% + 0.5px)); border-color: #ffb000; color: #0b0b0d; } .ds-placa-sel::after { border-top-color: #ffb000; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "El Tablero de Partidas",
+    "overview": "ParkIN se lee como el tablero de una terminal: cada cochera y cada reserva es un renglón fijo cuyo código, franja, precio y estado viven en celdas de paleta que se dan vuelta cuando algo cambia. El marco es acero oscuro, los paneles son negro paleta y la información aparece en letra blanca condensada sobre celdas con una bisagra horizontal al medio. El color no decora: ámbar, verde y rojo son señales de estado, y el ámbar además marca la acción primaria y lo que está seleccionado.\n\nLa densidad es de instrumento, no de folleto. Las pantallas de trabajo (búsqueda, perfil) llenan la ventana con tablero y mapa, sin aire ornamental; el mapa de OpenStreetMap se oscurece y desatura para quedar como fondo del tablero, y los pines son placas de paleta con el código y el precio. La profundidad es casi toda tonal (acero, paleta, celda) y las esquinas son vivas o apenas suavizadas a 2px. El movimiento tiene un solo gesto propio: el giro de cada celda, en cascada carácter por carácter, que se apaga con `prefers-reduced-motion`.\n\nLo que el mundo rechaza, confirmado por el contrato de dirección y visible en el build: el mapa blanco con pines de precio redondeados y las cards con foto como unidad de resultado.",
+    "keyCharacteristics": [
+      "Fondo marco de acero, paneles negro paleta, celdas un escalón más claras.",
+      "Datos (códigos, cifras, estados, marca) en celdas de paleta de Barlow Condensed; lectura en Barlow minúscula.",
+      "Tres colores de señal con significado fijo: ámbar, verde, rojo.",
+      "Esquinas a 0 o 2px; separación por costuras de 1px, no por sombras.",
+      "Un único gesto de movimiento: el giro de la celda."
+    ],
+    "rules": [
+      { "name": "The Señal Fija Rule", "body": "Cada color de señal tiene un significado y no se presta: ámbar = acción, selección o retenida; verde = confirmada o activo; rojo = cancelada, vencida, ocupada o error. «LIBRE» va en letra blanca, «FINALIZADA» en acero claro. Un color de señal sin estado detrás es un error.", "section": "colors" },
+      { "name": "The Fondo No Compite Rule", "body": "Los fondos son siempre neutros de acero. Los colores de señal aparecen como texto, borde o fondo traslúcido al 10% (fila elegida, aviso de error); el único fondo de señal pleno es el botón primario y la placa seleccionada.", "section": "colors" },
+      { "name": "The Dato en Celda Rule", "body": "Todo valor que puede cambiar (código, precio, total, contador, estado) se muestra en celdas de paleta con un largo fijo, para que la columna no salte cuando el valor gira. El texto real queda en `sr-only` y las celdas son `aria-hidden`.", "section": "typography" },
+      { "name": "The Minúscula Para Leer Rule", "body": "Lo que se lee de corrido (títulos de cochera, explicaciones, ayudas, errores) va en Barlow minúscula. La mayúscula condensada es para nombrar y etiquetar, no para frases.", "section": "typography" },
+      { "name": "The Plano Por Costura Rule", "body": "Un panel se separa de otro por escalón de neutro o costura de 1px, nunca por sombra. La sombra queda reservada para lo que flota sobre el mapa.", "section": "elevation" },
+      { "name": "The Dos Píxeles Rule", "body": "Ningún radio supera los 2px. Lo redondeado es el mapa blanco que el sistema rechaza.", "section": "shapes" },
+      { "name": "The Punteado Es Inerte Rule", "body": "Borde punteado = no se puede tocar ni editar ahora. No se usa como decoración.", "section": "shapes" }
+    ],
+    "dos": [
+      "**Do** mostrar todo valor cambiante (código, precio, total, estado, contador) en celdas de paleta con largo fijo y el texto real en `sr-only`.",
+      "**Do** usar ámbar para acción primaria, selección y retenida; verde solo para confirmada o activo; rojo solo para cancelada, vencida, ocupada o error.",
+      "**Do** marcar la selección de una cochera con el mismo ámbar en la fila del tablero y en la placa del mapa.",
+      "**Do** separar superficies por escalón de neutro (acero, paleta, celda) o costura de 1px.",
+      "**Do** mostrar lo inactivo con borde punteado de costura y texto acero claro, y explicar al lado por qué.",
+      "**Do** desactivar el giro de celdas y los vuelos del mapa con `prefers-reduced-motion`."
+    ],
+    "donts": [
+      "**Don't** usar radios mayores a 2px ni pines redondeados.",
+      "**Don't** mostrar el mapa con sus teselas claras originales; siempre pasa por el filtro oscuro del tablero.",
+      "**Don't** usar un color de señal como decoración o como fondo de superficie; la única excepción de fondo pleno es el botón primario y la placa seleccionada.",
+      "**Don't** separar paneles con sombras; la sombra es solo de las placas sobre el mapa.",
+      "**Don't** poner frases de lectura en mayúscula condensada."
+    ]
+  }
+}

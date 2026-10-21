@@ -31,7 +31,7 @@ Con `docker compose up --build`:
 
 | Qué | Dónde |
 |---|---|
-| Dashboard "Parkin" (pantalla de inicio de Grafana) | http://localhost:3000 |
+| Dashboard "Parkin" (pantalla de inicio de Grafana) | http://localhost:3030 |
 | Seguir una request en todos los servicios | Grafana → Explore → Loki → `{servicio=~".+"} \|= "<traceId>"` |
 | Ver la traza de una request | Grafana → Explore → Jaeger, o http://localhost:16686 |
 | Alertas activas | http://localhost:9090/alerts |
@@ -88,7 +88,7 @@ Probamos el stack completo con un script que crea una cochera, busca, lanza 10 r
 La observabilidad detectó dos problemas:
 
 1. **Deadlock en reservas simultáneas.** En algunas corridas, 9 de las 10 reservas respondieron 500 en lugar de 409. Los logs de Reservas mostraron `psycopg.errors.DeadlockDetected` en el `INSERT`: con varias transacciones esperándose en la restricción de exclusión, Postgres aborta algunas por deadlock. **Nunca hubo doble reserva**: siempre entró una sola, pero el cliente recibía un error de servidor en lugar de "franja ocupada".
-2. **RabbitMQ no arrancaba desde cero.** `infra/rabbitmq/definitions.json` no declaraba el virtual host ni usuarios, y con un volumen nuevo RabbitMQ fallaba con `Please create virtual host "/" prior to importing definitions`.
+2. **RabbitMQ no arrancaba desde cero.** `infra/rabbitmq/definitions.json` no declaraba el virtual host ni usuarios, y con un volumen nuevo RabbitMQ fallaba con `Please create virtual host "/" prior to importing definitions`. Ya está corregido (PR #13).
 
 ## Reservas (implementado)
 
@@ -102,7 +102,8 @@ Tres señales, todas con el mismo `traceId`.
 |---|---|
 | `reservas_http_requests_total{metodo,ruta,estado}` | Requests; la ruta es la plantilla (`/reservas/{reserva_id}`), no el id |
 | `reservas_http_request_duration_seconds` | Latencia (histograma, con bucket en 0.8 s) |
-| `reservas_creadas_total`, `reservas_confirmadas_total`, `reservas_expiradas_total` | Flujo de negocio |
+| `reservas_creadas_total`, `reservas_confirmadas_total`, `reservas_expiradas_total`, `reservas_finalizadas_total` | Flujo de negocio |
+| `reservas_consultas_cocheras_total{resultado}` | Consultas a Cocheras: `ok`, `no_encontrada` o `error` |
 | `reservas_canceladas_total{motivo}` | `cancelada_por_usuario` o `pago_rechazado` |
 | `reservas_conflictos_total` | Intentos rechazados por franja ocupada (409) |
 | `reservas_eventos_procesados_total{tipo,resultado}` | `aplicado`, `duplicado`, `ignorado` o `invalido` |

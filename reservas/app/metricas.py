@@ -15,8 +15,12 @@ RESERVAS_CREADAS = Counter("reservas_creadas_total", "Reservas creadas")
 RESERVAS_CONFIRMADAS = Counter("reservas_confirmadas_total", "Reservas confirmadas por pago aprobado")
 RESERVAS_CANCELADAS = Counter("reservas_canceladas_total", "Reservas canceladas", ["motivo"])
 RESERVAS_EXPIRADAS = Counter("reservas_expiradas_total", "Reservas expiradas por falta de pago")
+RESERVAS_FINALIZADAS = Counter("reservas_finalizadas_total", "Reservas confirmadas cuya franja ya terminó")
 CONFLICTOS = Counter("reservas_conflictos_total", "Intentos de reserva rechazados por franja ocupada (409)")
 
+CONSULTAS_COCHERAS = Counter(
+    "reservas_consultas_cocheras_total", "Consultas de Reservas a Cocheras", ["resultado"]
+)
 EVENTOS_PROCESADOS = Counter(
     "reservas_eventos_procesados_total", "Eventos recibidos de Pagos", ["tipo", "resultado"]
 )
