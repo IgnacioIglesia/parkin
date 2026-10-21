@@ -11,17 +11,30 @@ services:
     ports: ["8080:80"]
     restart: unless-stopped
 
+  # Genera las claves JWT en infra/jwt si faltan y termina: así `docker compose up` funciona
+  # desde cero. Usa la misma imagen que Usuarios. Corre como root para poder escribir en la
+  # carpeta montada del host también en Linux y macOS.
+  jwt-claves:
+    build: ./usuarios
+    image: parkin-usuarios
+    user: root
+    command: ["node", "src/generar-claves.js", "/claves"]
+    volumes: ["./infra/jwt:/claves"]
+    restart: "no"
+
   usuarios:
     build: ./usuarios
+    image: parkin-usuarios
     environment:
       PORT: "3000"
       DATABASE_URL: postgres://app:app@db-usuarios:5432/usuarios
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private.pem
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public.pem
-    volumes: ["./infra/jwt:/run/secrets:ro"]  # generar con infra/jwt/generar-claves.sh
+    volumes: ["./infra/jwt:/run/secrets:ro"]  # las genera jwt-claves si faltan
     ports: ["3001:3000"]
     depends_on:
       db-usuarios: { condition: service_healthy }
+      jwt-claves: { condition: service_completed_successfully }
     restart: unless-stopped
 
   web:
