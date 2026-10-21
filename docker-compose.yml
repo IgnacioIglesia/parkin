@@ -69,6 +69,8 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       RETENCION_MINUTOS: "10"
       COCHERAS_URL: http://cocheras:4000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_SERVICE_NAME: reservas
     ports: ["8000:8000"]
     depends_on:
       db-reservas: { condition: service_healthy }

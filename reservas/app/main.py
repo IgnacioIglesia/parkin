@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Res
 from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from . import cocheras, config, db, eventos, logs, mensajeria, metricas, repository
+from . import cocheras, config, db, eventos, logs, mensajeria, metricas, repository, telemetria
 from .expiracion import Expirador
 from .schemas import FranjaOcupada, ReservaIn, ReservaOut
 
@@ -48,7 +48,9 @@ app = FastAPI(title="Reservas", lifespan=lifespan)
 async def observabilidad(request: Request, call_next):
     """Fija el traceId del request (el del gateway o uno nuevo), lo devuelve en X-Trace-Id y
     registra una línea de log y las métricas HTTP de cada request."""
-    trace = eventos.trace_id_de(request.headers.get("traceparent"))
+    # Con OpenTelemetry activo, el traceId es el del span del request (el del `traceparent` entrante,
+    # o uno nuevo): así los logs y los eventos coinciden con lo que se ve en Jaeger.
+    trace = telemetria.trace_id_actual() or eventos.trace_id_de(request.headers.get("traceparent"))
     request.state.trace_id = trace
     usuario = _uuid_o_none(request.headers.get("x-user-id"))
     token_trace = logs.trace_id_var.set(trace)
@@ -220,3 +222,7 @@ def ocupacion(
     if desde.tzinfo is None or hasta.tzinfo is None or hasta <= desde:
         raise HTTPException(status_code=422, detail="desde y hasta deben tener zona horaria y hasta > desde")
     return repository.ocupacion(request.app.state.pool, cochera_id, desde, hasta)
+
+
+# Al final, para que la instrumentación envuelva a todos los middlewares y rutas anteriores.
+telemetria.configurar(app)
