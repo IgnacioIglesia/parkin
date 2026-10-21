@@ -33,6 +33,9 @@ services:
       DATABASE_URL: postgres://app:app@db-cocheras:5432/cocheras
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      RESERVAS_URL: http://reservas:8000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_SERVICE_NAME: cocheras
     ports: ["4000:4000"]
     depends_on:
       db-cocheras: { condition: service_healthy }
@@ -54,7 +57,6 @@ services:
     restart: unless-stopped
 
   pagos:
-    profiles: ["pendiente"]
     build: ./pagos
     environment:
       PORT: "3000"
@@ -62,7 +64,9 @@ services:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       REDIS_URL: redis://redis:6379
       PASARELA_ACCESS_TOKEN: ${PASARELA_ACCESS_TOKEN:-}
-    ports: ["3002:3000"]
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    # Puerto expuesto solo para probar sin gateway; se quita cuando el gateway rutee /api/pagos
+    ports: ["8084:3000"]
     depends_on:
       db-pagos: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
@@ -146,12 +150,31 @@ services:
     image: grafana/loki:3.1.0
     ports: ["3100:3100"]
 
+  # Lee los logs de todos los contenedores y los manda a Loki (ver infra/alloy/config.alloy).
+  alloy:
+    image: grafana/alloy:v1.19.2
+    command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
+    volumes:
+      - ./infra/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+
+  # Recibe trazas OTLP por HTTP en el 4318 (OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318).
   jaeger:
     image: jaegertracing/all-in-one:1.58
     ports: ["16686:16686", "4318:4318"]
 
+  # Datasources y dashboard se cargan solos (infra/grafana). Acceso anónimo: solo desarrollo.
   grafana:
     image: grafana/grafana:11.1.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/parkin.json
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports: ["3030:3000"]  # 3030 y no 3000, que suele estar ocupado por servidores de desarrollo
     depends_on: [prometheus, loki, jaeger]
 

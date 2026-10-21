@@ -25,3 +25,43 @@ groups:
         for: 5m
         annotations:
           resumen: "Más de 30% de las reservas de la última hora expiraron: posible problema con Pagos"
+
+  - name: cocheras
+    rules:
+      - alert: CocherasErroresInternos
+        expr: sum(rate(cocheras_graphql_operaciones_total{resultado="error_interno"}[5m])) / sum(rate(cocheras_graphql_operaciones_total[5m])) > 0.02
+        for: 5m
+        annotations:
+          resumen: "Más de 2% de operaciones GraphQL de Cocheras con error interno durante 5 minutos"
+
+      - alert: CocherasBusquedaLenta
+        expr: histogram_quantile(0.95, sum(rate(cocheras_graphql_duracion_seconds_bucket{operacion="buscarCocheras"}[5m])) by (le)) > 0.5
+        for: 5m
+        annotations:
+          resumen: "p95 de buscarCocheras mayor a 500 ms durante 5 minutos"
+
+      - alert: CocherasSinRabbitMQ
+        expr: cocheras_rabbitmq_conectado == 0
+        for: 1m
+        annotations:
+          resumen: "Cocheras no está consumiendo eventos: las direcciones no se habilitan al confirmar reservas"
+
+      - alert: CocherasNoLlegaAReservas
+        expr: sum(rate(cocheras_consultas_reservas_total{resultado="error"}[5m])) > 0
+        for: 5m
+        annotations:
+          resumen: "Cocheras no puede consultar la ocupación en Reservas: la búsqueda no filtra cocheras ocupadas"
+
+  - name: infraestructura
+    rules:
+      - alert: ServicioCaido
+        expr: up == 0
+        for: 1m
+        annotations:
+          resumen: "Prometheus no puede leer las métricas de {{ $labels.job }}"
+
+      - alert: EventosEnDLQ
+        expr: sum(rabbitmq_detailed_queue_messages{queue="cocheras.dlq"}) > 0
+        for: 1m
+        annotations:
+          resumen: "Hay mensajes en cocheras.dlq: algún consumidor no pudo procesar eventos"
