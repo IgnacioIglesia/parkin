@@ -20,6 +20,20 @@ Fuente: segunda entrega. **Cualquier cambio acá se hace por PR y se avisa al eq
 | `/api/pagos` | pagos |
 | `/ws` | pagos (Socket.IO, sticky sessions) |
 
+Cómo llegan las rutas a cada servicio (implementado en `gateway/nginx.conf`):
+
+| El cliente llama | El servicio recibe |
+|---|---|
+| `/api/usuarios/auth/login` | `/auth/login` (se quita el prefijo) |
+| `/api/reservas/{id}` | `/reservas/{id}` |
+| `/api/pagos/webhook` | `/pagos/webhook` |
+| `/graphql`, `/ws` | igual |
+
+- El gateway genera el header `traceparent` si el cliente no lo manda, y responde con `X-Trace-Id`.
+- Rate limiting: 10 intentos de login por minuto por IP; 20 requests por segundo por IP en general.
+- `X-User-Id`: el gateway descarta el que mande el cliente. **Pendiente (Romi):** validar el JWT y poner ahí el id del usuario autenticado.
+- `/cocheras/{id}/ocupacion` (Reservas) es interno: Cocheras lo llama directo a `reservas:8000`, no pasa por el gateway.
+
 ## 3. REST: Usuarios (`/api/usuarios`)
 
 | Método | Endpoint | Descripción |
@@ -34,13 +48,15 @@ Fuente: segunda entrega. **Cualquier cambio acá se hace por PR y se avisa al eq
 
 | Método | Endpoint | Descripción |
 |---|---|---|
-| POST | `/reservas` | Crea reserva en `PENDIENTE_PAGO`. Requiere header `Idempotency-Key` (UUID) |
+| POST | `/reservas` | Crea reserva en `PENDIENTE_PAGO`. Body: `{ cochera_id, desde, hasta }`. Requiere header `Idempotency-Key` (UUID) |
 | GET | `/reservas/{id}` | Estado de una reserva (fuente de verdad) |
 | GET | `/reservas?rol=conductor` | Reservas del usuario |
 | POST | `/reservas/{id}/cancelar` | Cancela según la política |
 | GET | `/cocheras/{id}/ocupacion?desde&hasta` | Franjas ocupadas, usada por la búsqueda |
 
-Códigos: `201` reserva creada, `409` franja ocupada, `422` datos inválidos.
+Códigos: `201` reserva creada, `200` reintento con la misma `Idempotency-Key`, `404` la cochera no existe, `409` franja ocupada, `422` datos inválidos, `503` no se pudo consultar a Cocheras.
+
+**El cliente no manda el propietario ni el monto.** Reservas los obtiene de Cocheras con la query `cochera(id: $id) { propietario { id } precioHora }` (síncrona, timeout de 3 s, propaga el `traceparent`) y calcula `monto = precioHora × horas de la franja`, con centavos (90 min a $100/h son $150). Si el body incluye `propietario_id` o `monto`, se ignoran. Un reintento con una `Idempotency-Key` ya usada devuelve la reserva existente sin consultar a Cocheras.
 
 Estados: `PENDIENTE_PAGO` → `CONFIRMADA` | `CANCELADA` | `EXPIRADA`; `CONFIRMADA` → `FINALIZADA`.
 
@@ -80,7 +96,64 @@ type Mutation {
 }
 ```
 
-Los tipos auxiliares (`Punto`, `PuntoInput`, `Franja`, `FranjaInput`, `TipoVehiculo`, `Propietario`, `CocheraInput`) quedan por definir por el responsable de Cocheras y se agregan acá por PR. Límite de profundidad de query: 5.
+Tipos auxiliares:
+
+```graphql
+"Coordenadas WGS84 en grados decimales"
+type Punto {
+  lat: Float!
+  lng: Float!
+}
+
+input PuntoInput {
+  lat: Float!
+  lng: Float!
+}
+
+"Tamaño máximo de vehículo que admite la cochera: MOTO < AUTO < CAMIONETA"
+enum TipoVehiculo {
+  MOTO
+  AUTO
+  CAMIONETA
+}
+
+"Franja semanal en hora de Montevideo. diaSemana: 1 = lunes ... 7 = domingo"
+type Franja {
+  diaSemana: Int!
+  horaDesde: String!   # "HH:MM"
+  horaHasta: String!   # "HH:MM"; "24:00" = fin del día
+}
+
+input FranjaInput {
+  diaSemana: Int!
+  horaDesde: String!
+  horaHasta: String!
+}
+
+"Solo el id: los datos del usuario viven en Usuarios (database per service)"
+type Propietario {
+  id: ID!
+}
+
+input CocheraInput {
+  titulo: String!
+  precioHora: Float!          # en UYU
+  tipoVehiculo: TipoVehiculo!
+  direccionExacta: String!
+  ubicacion: PuntoInput!      # ubicación exacta; la aproximada la calcula el servicio
+  fotos: [String!]            # URLs de las fotos ya subidas
+}
+```
+
+Reglas:
+- `desde` y `hasta` de `buscarCocheras` van en ISO-8601 UTC. La búsqueda devuelve solo cocheras disponibles en toda la franja.
+- `tipo` en `buscarCocheras` devuelve las cocheras donde entra ese vehículo (una `CAMIONETA` admite también `AUTO` y `MOTO`).
+- `ubicacionAproximada` está desplazada entre 100 y 300 m de la real, fija para cada cochera. `direccionExacta` es `null` salvo para el propietario o un conductor con reserva confirmada.
+- Las horas de `Franja` van alineadas a :00 o :30, con `horaDesde < horaHasta`. Una franja no cruza la medianoche: 22:00 a 06:00 se carga como dos franjas.
+- `definirDisponibilidad` reemplaza todas las franjas de la cochera. `actualizarCochera` reemplaza todos los campos del input.
+- `crearCochera`, `actualizarCochera`, `definirDisponibilidad`, `eliminarCochera` y `misCocheras` exigen el rol `PROPIETARIO`. Solo el dueño puede modificar su cochera.
+
+Límite de profundidad de query: 5.
 
 ## 7. Eventos (RabbitMQ)
 
@@ -112,7 +185,46 @@ Reglas para todos los consumidores:
 - ACK manual (entrega at-least-once) y prefetch 10.
 - Idempotencia: guardar `eventId` procesado en `evento_procesado` y descartar repetidos.
 
-> El payload de `datos` de cada evento, salvo `pago.aprobado`, queda por completar entre Reservas y Pagos.
+### Payload de `datos` (propuesta de Reservas, a validar con Pagos y Cocheras)
+
+Eventos `reserva.*` (los publica Reservas). Todos llevan la misma foto de la reserva:
+
+```json
+{
+  "reservaId": "…", "cocheraId": "…", "conductorId": "…", "propietarioId": "…",
+  "desde": "2026-10-22T14:00:00+00:00", "hasta": "2026-10-22T16:00:00+00:00",
+  "monto": 180.0, "moneda": "UYU", "estado": "PENDIENTE_PAGO"
+}
+```
+
+- `reserva.creada` agrega `expiraEn` (fin de la retención de 10 minutos).
+- `reserva.cancelada` y `reserva.expirada` agregan `motivo`: `cancelada_por_usuario`, `pago_rechazado` o `plazo_vencido`.
+
+Eventos `pago.*` (los publica Pagos). Reservas solo necesita `reservaId`; el resto es informativo:
+
+```json
+{ "reservaId": "…", "pagoId": "…", "monto": 180.0, "moneda": "UYU" }
+```
+
+`pago.rechazado` puede agregar `motivo`.
+
+### Topología (la crea RabbitMQ al arrancar)
+
+Definida en `infra/rabbitmq/definitions.json`. Los servicios **no declaran** colas: solo consumen de la suya. Si falta una, el consumidor reintenta hasta que exista.
+
+| Cola | Consume | Routing keys |
+|---|---|---|
+| `reservas.pago-eventos` | Reservas | `pago.aprobado`, `pago.rechazado` |
+| `pagos.reserva-eventos` | Pagos | `reserva.creada`, `reserva.confirmada`, `reserva.cancelada`, `reserva.expirada` |
+| `cocheras.reserva-eventos` | Cocheras | `reserva.confirmada`, `reserva.cancelada` |
+| `cocheras.dlq` | nadie (inspección manual) | recibe lo que supera 3 entregas, vía `cocheras.dlx` |
+
+Las tres primeras son *quorum queues* con `x-delivery-limit: 3`. Un consumidor que falla debe hacer `nack` con `requeue=true`; si el mensaje es inválido y nunca se podrá procesar, `nack` con `requeue=false` lo manda directo a la DLQ.
+
+### Garantías de Reservas
+
+- Publica con *outbox transaccional*: el evento se guarda en la misma transacción que el cambio de estado y se envía después con publisher confirms y `mandatory`. Un mismo evento puede publicarse más de una vez.
+- Cada consumidor debe ser idempotente por `eventId` (ver reglas arriba).
 
 ## 8. WebSocket (Pagos, `/ws`)
 

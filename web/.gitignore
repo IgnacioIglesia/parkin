@@ -1,0 +1,6 @@
+# Material de trabajo del proceso de diseño: capturas, referencias descargadas y bocetos.
+# Se versionan solo PRODUCT.md, DESIGN.md y las decisiones en .impeccable/surfaces y design.json.
+.impeccable/review/
+.impeccable/ref/
+.impeccable/mocks/
+.impeccable/build/

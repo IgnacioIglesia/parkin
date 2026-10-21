@@ -26,3 +26,7 @@ venv/
 logs/
 pgdata/
 coverage/
+.pytest_cache/
+
+# Claves JWT de desarrollo
+*.pem

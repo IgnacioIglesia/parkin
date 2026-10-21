@@ -1,0 +1,27 @@
+# Umbrales iniciales (segunda entrega, sección 9.2); se ajustan con datos reales de uso.
+groups:
+  - name: reservas
+    rules:
+      - alert: ReservasErroresAltos
+        expr: sum(rate(reservas_http_requests_total{estado=~"5.."}[5m])) / sum(rate(reservas_http_requests_total[5m])) > 0.02
+        for: 5m
+        annotations:
+          resumen: "Más de 2% de errores 5xx en Reservas durante 5 minutos"
+
+      - alert: ReservasLatenciaAlta
+        expr: histogram_quantile(0.95, sum(rate(reservas_http_request_duration_seconds_bucket{metodo="POST",ruta="/reservas"}[5m])) by (le)) > 0.8
+        for: 5m
+        annotations:
+          resumen: "p95 de POST /reservas mayor a 800 ms durante 5 minutos"
+
+      - alert: ReservasOutboxAcumulado
+        expr: reservas_outbox_pendientes > 100
+        for: 2m
+        annotations:
+          resumen: "Hay más de 100 eventos sin publicar: RabbitMQ caído o el publicador detenido"
+
+      - alert: ReservasExpiracionesAnomalas
+        expr: increase(reservas_expiradas_total[1h]) / increase(reservas_creadas_total[1h]) > 0.3
+        for: 5m
+        annotations:
+          resumen: "Más de 30% de las reservas de la última hora expiraron: posible problema con Pagos"
