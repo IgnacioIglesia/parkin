@@ -11,6 +11,10 @@ services:
     # Solo la clave pública (verifica los JWT). La privada no debe estar en el gateway.
     # Se genera con infra/jwt/generar-claves.sh.
     volumes: ["./infra/jwt/jwt_public.pem:/etc/nginx/jwt_public.pem:ro"]
+    # Tiene que esperar a que jwt-claves genere la clave: si el archivo todavía no existe cuando
+    # Docker crea el contenedor, lo crea como CARPETA y el arranque en frío falla.
+    depends_on:
+      jwt-claves: { condition: service_completed_successfully }
     ports: ["8080:80"]
     restart: unless-stopped
 
@@ -94,6 +98,7 @@ services:
     # Puerto expuesto solo para probar sin gateway; se quita cuando el gateway rutee /api/pagos
     ports: ["8084:3000"]
     depends_on:
+      jwt-claves: { condition: service_completed_successfully }
       db-pagos: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
       redis: { condition: service_healthy }
