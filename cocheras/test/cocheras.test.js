@@ -299,6 +299,31 @@ describe('Cocheras contra PostGIS', { skip: !TEST_DB && 'Definir TEST_DATABASE_U
     assert.equal((await gql(consulta, { id: c.id }, CONDUCTOR)).data.cochera.direccionExacta, 'Av. Brasil 2500');
   });
 
+  test('ubicacion exacta: mismas reglas que la dirección', async () => {
+    const c = await crearCochera();
+    const consulta = 'query ($id: ID!) { cochera(id: $id) { ubicacion { lat lng } } }';
+    assert.equal((await gql(consulta, { id: c.id })).data.cochera.ubicacion, null);
+    assert.equal((await gql(consulta, { id: c.id }, CONDUCTOR)).data.cochera.ubicacion, null);
+    // El dueño recibe el punto que cargó, para editar sin volver a marcarlo en el mapa.
+    assert.deepEqual((await gql(consulta, { id: c.id }, PROPIETARIO)).data.cochera.ubicacion, POCITOS);
+
+    await pool.query('INSERT INTO acceso_direccion (reserva_id, cochera_id, conductor_id) VALUES ($1, $2, $3)', [
+      randomUUID(),
+      c.id,
+      CONDUCTOR.id,
+    ]);
+    assert.deepEqual((await gql(consulta, { id: c.id }, CONDUCTOR)).data.cochera.ubicacion, POCITOS);
+
+    // En la búsqueda un desconocido nunca recibe el punto exacto.
+    await definirDisponibilidad(c.id, lunesDe14a17);
+    const body = await gql(
+      `query ($cerca: PuntoInput!, $desde: String!, $hasta: String!) {
+         buscarCocheras(cerca: $cerca, radioMetros: 1000, desde: $desde, hasta: $hasta) { id ubicacion { lat } } }`,
+      { cerca: POCITOS, ...FRANJA },
+    );
+    assert.deepEqual(body.data.buscarCocheras, [{ id: c.id, ubicacion: null }]);
+  });
+
   test('misCocheras devuelve solo las del usuario', async () => {
     const mia = await crearCochera();
     await crearCochera({}, OTRO_PROPIETARIO);

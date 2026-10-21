@@ -100,6 +100,14 @@ async function sinOcupacion(ctx, cocheras, desde, hasta) {
   };
 }
 
+// La dirección y el punto exactos solo los ven el propietario y los conductores con
+// reserva confirmada.
+async function puedeVerUbicacionExacta(cochera, ctx) {
+  if (!ctx.usuario) return false;
+  if (ctx.usuario.id === cochera.propietario_id) return true;
+  return ctx.accesoDireccion.load(cochera.id);
+}
+
 // Todo cambio en una cochera deja viejas las búsquedas cacheadas.
 async function registrarCambio(ctx, operacion) {
   cocherasCambios.inc({ operacion });
@@ -201,11 +209,11 @@ export const resolvers = {
     tipoVehiculo: (c) => c.tipo_vehiculo,
     ubicacionAproximada: (c) => ({ lat: c.aprox_lat, lng: c.aprox_lng }),
     propietario: (c) => ({ id: c.propietario_id }),
-    // Solo la ven el propietario y los conductores con reserva confirmada.
     async direccionExacta(c, _, ctx) {
-      if (!ctx.usuario) return null;
-      if (ctx.usuario.id === c.propietario_id) return c.direccion_exacta;
-      return (await ctx.accesoDireccion.load(c.id)) ? c.direccion_exacta : null;
+      return (await puedeVerUbicacionExacta(c, ctx)) ? c.direccion_exacta : null;
+    },
+    async ubicacion(c, _, ctx) {
+      return (await puedeVerUbicacionExacta(c, ctx)) ? { lat: c.lat, lng: c.lng } : null;
     },
     async disponibilidad(c, _, ctx) {
       const franjas = await ctx.franjas.load(c.id);
