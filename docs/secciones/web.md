@@ -69,5 +69,5 @@ La interfaz toma la forma de un **tablero de partidas**. Códigos, precios, hora
 También se probó en 390 px de ancho.
 
 **Pendiente:**
-- El pago sigue el contrato de Pagos: `POST /api/pagos { reservaId }` con su propia `Idempotency-Key` (reusada si se reintenta), reintento automático ante `404 RESERVA_DESCONOCIDA` (Pagos todavía no recibió `reserva.creada`) y el checkout en otra pestaña, mientras la reserva se actualiza sola al confirmarse. Probado con respuestas simuladas según el contrato; falta probarlo con el servicio de Pagos real.
+- El pago sigue el contrato de Pagos: `POST /api/pagos { reservaId }` con su propia `Idempotency-Key` (reusada si se reintenta), reintento automático ante `404 RESERVA_DESCONOCIDA` (Pagos todavía no recibió `reserva.creada`) y el checkout en otra pestaña, mientras la reserva se actualiza sola al confirmarse. El servicio de Pagos real ya está integrado y el mismo flujo de API se probó a través del gateway (reservar, pagar, aprobar o rechazar, y los avisos por WebSocket); **falta probar la pantalla en el navegador** contra Pagos real.
 - Los bloqueos de fechas puntuales no están en el contrato GraphQL.
