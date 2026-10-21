@@ -4,9 +4,10 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { enTransaccion, pool } from '../db.js';
 import { HttpError } from '../errores.js';
+import { logins, refrescos, registros, verificaciones } from '../metricas.js';
 import { requiereAuth } from '../middleware/auth.js';
 import * as repo from '../repositorio.js';
-import { firmarAccessToken, hashToken, nuevoRefreshToken } from '../tokens.js';
+import { firmarAccessToken, hashToken, nuevoRefreshToken, verificarAccessToken } from '../tokens.js';
 
 export const ROLES = ['PROPIETARIO', 'CONDUCTOR'];
 
@@ -56,6 +57,7 @@ authRouter.post('/register', async (req, res) => {
       const usuario = await repo.crear(db, { ...datos, roles, passwordHash });
       return emitirSesion(db, usuario);
     });
+    registros.inc();
     req.log.info({ usuarioId: sesion.usuario.id }, 'usuario registrado');
     res.status(201).json(sesion);
   } catch (err) {
@@ -69,10 +71,12 @@ authRouter.post('/login', async (req, res) => {
   const usuario = await repo.buscarPorEmail(pool, email);
   const coincide = await bcrypt.compare(password, usuario?.password_hash ?? HASH_FALSO);
   if (!usuario || !coincide) {
+    logins.labels('fallido').inc();
     req.log.warn('login fallido');
     throw new HttpError(401, 'CREDENCIALES_INVALIDAS', 'Email o contraseña incorrectos');
   }
   const sesion = await emitirSesion(pool, usuario);
+  logins.labels('ok').inc();
   req.log.info({ usuarioId: usuario.id }, 'login correcto');
   res.json(sesion);
 });
@@ -102,14 +106,43 @@ authRouter.post('/refresh', async (req, res) => {
       await db.query('UPDATE refresh_token SET revocado = true, rotado_en = now() WHERE id = $1', [token.id]);
     }
     const usuario = await repo.buscarPorId(db, token.usuario_id);
-    return { sesion: await emitirSesion(db, usuario) };
+    return { sesion: await emitirSesion(db, usuario), enGracia: token.revocado };
   });
 
   if (resultado.error === 'TOKEN_REUTILIZADO') {
+    refrescos.labels('reutilizado').inc();
     req.log.warn({ usuarioId: resultado.usuarioId }, 'refresh token reutilizado: se revocan todas las sesiones');
   }
-  if (resultado.error) throw new HttpError(401, resultado.error, 'Refresh token inválido');
+  if (resultado.error) {
+    if (resultado.error === 'TOKEN_INVALIDO') refrescos.labels('invalido').inc();
+    throw new HttpError(401, resultado.error, 'Refresh token inválido');
+  }
+  refrescos.labels(resultado.enGracia ? 'gracia' : 'ok').inc();
   res.json(resultado.sesion);
+});
+
+// Para el gateway (auth_request de NGINX): valida el access token y devuelve la identidad en
+// X-User-Id y X-User-Roles, que el gateway reenvía a Reservas, Cocheras y Pagos.
+// Sin header Authorization responde 204 sin identidad (anónimo): cada servicio decide si su
+// ruta exige usuario. Un token inválido o vencido da 401, y el front refresca la sesión.
+authRouter.get('/verificar', (req, res) => {
+  const autorizacion = req.get('authorization');
+  if (!autorizacion) {
+    verificaciones.labels('anonimo').inc();
+    return res.status(204).end();
+  }
+  const [tipo, token] = autorizacion.split(' ');
+  try {
+    if (tipo !== 'Bearer' || !token) throw new Error('formato');
+    const payload = verificarAccessToken(token);
+    verificaciones.labels('ok').inc();
+    res.set('X-User-Id', payload.sub);
+    res.set('X-User-Roles', (payload.roles ?? []).join(','));
+    res.status(204).end();
+  } catch {
+    verificaciones.labels('invalido').inc();
+    throw new HttpError(401, 'TOKEN_INVALIDO', 'Token inválido o vencido');
+  }
 });
 
 authRouter.post('/logout', async (req, res) => {
