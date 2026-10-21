@@ -27,6 +27,7 @@ Cómo llegan las rutas a cada servicio (implementado en `gateway/nginx.conf`):
 | `/api/usuarios/auth/login` | `/auth/login` (se quita el prefijo) |
 | `/api/reservas/{id}` | `/reservas/{id}` |
 | `/api/pagos/webhook` | `/pagos/webhook` |
+| `/pasarela/checkout/{idExterno}` y `/pasarela/checkout/{idExterno}/resultado` | `/checkout/{idExterno}` y `/checkout/{idExterno}/resultado` de `pasarela-mock` (solo demo; ver abajo) |
 | `/graphql`, `/ws` | igual |
 
 - El gateway genera el header `traceparent` si el cliente no lo manda, y responde con `X-Trace-Id`.
@@ -46,7 +47,9 @@ Cómo llegan las rutas a cada servicio (implementado en `gateway/nginx.conf`):
 | `/api/pagos/webhook` | No: lo llama la pasarela y se valida con la firma HMAC |
 | `/graphql` | Opcional: sin token la request es anónima (buscar cocheras); con un token inválido o vencido, 401 |
 | `/ws` | No en el gateway: el token va en el handshake (`auth.token`) y lo valida Pagos |
+| `/pasarela/checkout/*` | No: es la página de pago de la pasarela de prueba, que abre el navegador (solo demo) |
 
+- **Pasarela de prueba por el gateway (solo demo):** para que el checkout se abra desde un navegador remoto (por ejemplo con un túnel público hacia el gateway, o desde el front en Vercel) sin exponer el puerto de `pasarela-mock`, el gateway publica **únicamente** la página de pago y el botón que decide el resultado. `/ordenes` (crear órdenes y reembolsar) es de Pagos y **no se expone**: da `404`, igual que cualquier otra ruta de la pasarela, `/health` o los intentos de recorrer rutas. Para que la `checkoutUrl` que devuelve Pagos use esta ruta, `pasarela-mock` se levanta con `PASARELA_PUBLIC_URL=<URL pública del gateway>/pasarela`; por ejemplo, `PASARELA_PUBLIC_URL=https://algo.trycloudflare.com/pasarela docker compose up -d pasarela-mock`. La ruta no necesita token (el usuario llega desde la pasarela, no desde la app) y quien conozca el id de una orden puede aprobarla o rechazarla: es aceptable para una simulación, y es una de las cosas que cambia al usar una pasarela real, donde el aviso lo firma el proveedor.
 - **Errores del gateway:** token ausente, inválido o vencido → `401` con `{"codigo":"NO_AUTENTICADO", ...}` y `WWW-Authenticate: Bearer`. Si el gateway no tiene la clave pública → `503` con `{"codigo":"AUTH_NO_DISPONIBLE", ...}` (falla cerrado: no deja pasar a nadie). El front, ante un 401, refresca el token una vez y reintenta.
 - **Clave pública:** el gateway lee `/etc/nginx/jwt_public.pem` (en `docker-compose.yml`, montada desde `infra/jwt/jwt_public.pem`, generada con `infra/jwt/generar-claves.sh`). Solo la pública: la privada no debe estar en el gateway. Si se rotan las claves, hay que reiniciar el gateway.
 - Los servicios igual pueden volver a verificar el token (defensa en profundidad), como hace Usuarios.
