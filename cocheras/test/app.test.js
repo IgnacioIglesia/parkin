@@ -4,6 +4,7 @@ import request from 'supertest';
 import { crearApp } from '../src/app.js';
 import { crearLogger } from '../src/logger.js';
 import { traceIdDe } from '../src/traza.js';
+import { cacheNula } from '../src/cache.js';
 
 const logger = crearLogger('silent');
 const poolSano = { query: async () => ({ rows: [] }) };
@@ -14,13 +15,17 @@ const poolCaido = {
 };
 
 const reservas = { ocupacion: async () => [] };
+const consumidor = { conectado: true };
+const deps = { logger, reservas, cache: cacheNula, consumidor };
 
-const { app, apollo } = await crearApp({ logger, pool: poolSano, reservas });
-const caida = await crearApp({ logger, pool: poolCaido, reservas });
+const { app, apollo } = await crearApp({ ...deps, pool: poolSano });
+const caida = await crearApp({ ...deps, pool: poolCaido });
+const sinRabbit = await crearApp({ ...deps, pool: poolSano, consumidor: { conectado: false } });
 
 after(async () => {
   await apollo.stop();
   await caida.apollo.stop();
+  await sinRabbit.apollo.stop();
 });
 
 test('GET /health responde ok', async () => {
@@ -29,10 +34,16 @@ test('GET /health responde ok', async () => {
   assert.deepEqual(res.body, { status: 'ok' });
 });
 
-test('GET /ready responde 200 si llega a la base', async () => {
+test('GET /ready responde 200 si llega a la base y a RabbitMQ', async () => {
   const res = await request(app).get('/ready');
   assert.equal(res.status, 200);
-  assert.equal(res.body.db, 'ok');
+  assert.deepEqual(res.body, { status: 'ok', db: 'ok', rabbitmq: 'ok' });
+});
+
+test('GET /ready responde 503 si el consumidor no está conectado a RabbitMQ', async () => {
+  const res = await request(sinRabbit.app).get('/ready');
+  assert.equal(res.status, 503);
+  assert.equal(res.body.rabbitmq, 'error');
 });
 
 test('GET /ready responde 503 si no llega a la base', async () => {
