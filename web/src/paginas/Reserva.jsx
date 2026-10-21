@@ -1,9 +1,9 @@
-import { CreditCard, LockKeyhole, MapPin } from 'lucide-react';
+import { CreditCard, ExternalLink, LockKeyhole, MapPin } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { obtenerCochera } from '../api/cocheras.js';
 import { mensajeDeError } from '../api/errores.js';
-import { iniciarPago } from '../api/pagos.js';
+import { iniciarPago, urlDeCheckout } from '../api/pagos.js';
 import { cancelarReserva, obtenerReserva } from '../api/reservas.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { Celdas } from '../componentes/Celdas.jsx';
@@ -51,31 +51,56 @@ function CuentaRegresiva({ expiraEn, alVencer }) {
 }
 
 function Pago({ reserva }) {
-  const [enviando, setEnviando] = useState(false);
+  // Una Idempotency-Key por reserva: tocar «Pagá» de nuevo devuelve el mismo pago, no otro cobro.
+  const [clave] = useState(() => crypto.randomUUID());
+  const [estado, setEstado] = useState('quieto');
+  const [checkout, setCheckout] = useState(null);
   const [error, setError] = useState(null);
 
   const pagar = async () => {
-    setEnviando(true);
+    // La pestaña se abre en el mismo clic (si se abre después de esperar al servidor, el
+    // navegador la bloquea) y recién después se le carga la dirección del checkout.
+    const pestana = window.open('', '_blank');
+    setEstado('enviando');
     setError(null);
     try {
-      const url = await iniciarPago(reserva.id);
+      const url = urlDeCheckout(await iniciarPago(reserva.id, clave));
       if (!url) throw new Error('La pasarela no devolvió la dirección de pago.');
-      window.location.assign(url);
+      setCheckout(url);
+      if (pestana) {
+        pestana.opener = null;
+        pestana.location.href = url;
+        setEstado('abierto');
+      } else {
+        window.location.assign(url);
+      }
     } catch (err) {
+      pestana?.close();
+      const sinServicio = [502, 503].includes(err.status) || (err.status === 404 && err.codigo !== 'RESERVA_DESCONOCIDA');
       setError(
-        [404, 502, 503].includes(err.status)
+        sinServicio
           ? `El pago todavía no está disponible. Tu reserva sigue retenida hasta las ${hora(reserva.expira_en)}.`
           : mensajeDeError(err),
       );
-      setEnviando(false);
+      setEstado('quieto');
     }
   };
 
+  if (estado === 'abierto')
+    return (
+      <div className="mt-5" role="status">
+        <p className="text-lg">Abrimos el pago en otra pestaña. Cuando lo apruebes, esta pantalla se actualiza sola.</p>
+        <a href={checkout} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 font-semibold text-ambar underline">
+          Abrí el pago de nuevo <ExternalLink size={16} aria-hidden="true" />
+        </a>
+      </div>
+    );
+
   return (
     <>
-      <button type="button" className="boton boton-primario mt-5 w-full sm:w-auto" onClick={pagar} disabled={enviando}>
+      <button type="button" className="boton boton-primario mt-5 w-full sm:w-auto" onClick={pagar} disabled={estado === 'enviando'}>
         <CreditCard size={18} aria-hidden="true" />
-        {enviando ? 'Abriendo el pago…' : `Pagá ${formatoPesos(reserva.monto)}`}
+        {estado === 'enviando' ? 'Abriendo el pago…' : `Pagá ${formatoPesos(reserva.monto)}`}
       </button>
       {error && (
         <p className="mt-3 bg-rojo/10 px-4 py-3" role="alert">
