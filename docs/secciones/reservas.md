@@ -195,6 +195,25 @@ cd reservas
 TEST_DATABASE_URL=postgres://app:app@localhost:5443/reservas_test pytest
 ```
 
+### Prueba de carga contra el servicio en ejecución
+
+`reservas/scripts/carga.py` (sin dependencias) dispara cientos de requests que arrancan juntos contra el servicio levantado y verifica la regla central desde afuera, usando solo la API:
+
+```bash
+python3 reservas/scripts/carga.py --clientes 100
+```
+
+| Escenario | Verificación |
+|---|---|
+| 100 conductores, misma cochera y franja | 1 × `201` y 99 × `409`; la cochera queda con una sola franja ocupada |
+| 1 conductor, misma `Idempotency-Key` 100 veces | Todas devuelven la misma reserva; se creó una sola |
+| 100 conductores, 100 cocheras distintas | Las 100 se crean: no hay bloqueos innecesarios |
+| 60 franjas de 2 h desplazadas 30 min sobre una cochera | Ninguna franja ocupada se solapa con otra y **todo rechazo se solapa con una reserva aceptada** (no hay rechazos injustos) |
+
+Al final imprime la diferencia de las métricas (`reservas_creadas_total`, `reservas_conflictos_total`) durante la prueba y termina con código 1 si alguna verificación falla.
+
+Resultado en una corrida local con 100 clientes: 12 de 12 verificaciones correctas, con latencia p95 menor a 100 ms. Como control, al borrar a propósito la restricción de exclusión de la base, la misma prueba falla: los 50 conductores del primer escenario obtienen `201` sobre la misma franja. Es decir, la garantía de no doble reserva la da la restricción y no el código de la aplicación. Medido con un solo servicio y la base en la misma máquina; no representa la latencia de un despliegue real.
+
 ## 11. Factores 12-Factor aplicados a este servicio
 
 | Factor | Cómo |
