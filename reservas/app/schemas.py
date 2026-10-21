@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from pydantic import BaseModel, model_validator
@@ -14,6 +14,8 @@ class ReservaIn(BaseModel):
     def validar_franja(self):
         if self.desde.tzinfo is None or self.hasta.tzinfo is None:
             raise ValueError("desde y hasta deben incluir zona horaria")
+        if self.desde <= datetime.now(timezone.utc):
+            raise ValueError("desde debe ser una fecha futura")
         if self.hasta <= self.desde:
             raise ValueError("hasta debe ser posterior a desde")
         return self

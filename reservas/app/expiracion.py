@@ -51,8 +51,47 @@ def _expirar_lote(pool: ConnectionPool) -> int:
     return len(reservas)
 
 
+def finalizar_terminadas(pool: ConnectionPool) -> int:
+    """Pasa a FINALIZADA las reservas CONFIRMADA cuya franja ya terminó. Devuelve cuántas.
+
+    No publica ningún evento: `reserva.finalizada` se agregará junto con su primer consumidor
+    (las calificaciones). Publicarlo antes lo dejaría sin cola a la que llegar. Una reserva
+    confirmada no puede cancelarse una vez comenzada, así que no compite con la cancelación.
+    """
+    total = 0
+    while True:
+        finalizadas = _finalizar_lote(pool)
+        total += finalizadas
+        if finalizadas < LOTE:
+            return total
+
+
+def _finalizar_lote(pool: ConnectionPool) -> int:
+    with pool.connection() as conn:
+        ids = [
+            fila[0]
+            for fila in conn.execute(
+                "UPDATE reserva SET estado = 'FINALIZADA', version = version + 1 "
+                "WHERE id IN ("
+                "  SELECT id FROM reserva WHERE estado = 'CONFIRMADA' AND upper(franja) <= now() "
+                "  ORDER BY upper(franja) LIMIT %s FOR UPDATE SKIP LOCKED"
+                ") RETURNING id",
+                (LOTE,),
+            )
+        ]
+        for reserva_id in ids:
+            conn.execute(
+                "INSERT INTO reserva_historial (reserva_id, estado_anterior, estado_nuevo) "
+                "VALUES (%s, 'CONFIRMADA', 'FINALIZADA')",
+                (reserva_id,),
+            )
+    metricas.RESERVAS_FINALIZADAS.inc(len(ids))
+    return len(ids)
+
+
 class Expirador(threading.Thread):
-    """Corre `expirar_vencidas` cada `intervalo` segundos (por defecto, cada minuto)."""
+    """Cada `intervalo` segundos (por defecto, cada minuto) expira las reservas sin pago y
+    finaliza las confirmadas cuya franja terminó."""
 
     def __init__(self, pool: ConnectionPool, intervalo: float):
         super().__init__(name="expirador", daemon=True)
@@ -65,8 +104,11 @@ class Expirador(threading.Thread):
                 expiradas = expirar_vencidas(self.pool)
                 if expiradas:
                     log.info("Reservas expiradas: %s", expiradas)
+                finalizadas = finalizar_terminadas(self.pool)
+                if finalizadas:
+                    log.info("Reservas finalizadas: %s", finalizadas)
             except Exception:
-                log.exception("Falló la expiración de reservas; se reintenta en el próximo ciclo")
+                log.exception("Falló el ciclo de expiración y finalización; se reintenta en el próximo")
             self._detener.wait(self.intervalo)
 
     def detener(self):
