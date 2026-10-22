@@ -83,11 +83,11 @@ Se carga con `node --import ./src/telemetria.js` y solo se activa si está defin
 
 ## Hallazgos
 
-Probamos el stack completo con un script que crea una cochera, busca, lanza 10 reservas simultáneas sobre la misma franja, aprueba el pago publicando `pago.aprobado` y manda un evento inválido. Con un solo `traceId` se ve en Loki y en Jaeger el recorrido entero: búsqueda en Cocheras, consulta de ocupación en Reservas, reserva creada, pago aplicado y dirección habilitada en Cocheras. El evento inválido terminó en `cocheras.dlq` y disparó la alerta `EventosEnDLQ`.
+Probamos el stack completo con un script que crea una cochera, busca, lanza 10 reservas simultáneas sobre la misma franja, aprueba el pago y manda un evento inválido. Hoy ese recorrido está en `scripts/demo.mjs`, que pasa por el gateway y paga con Pagos y la pasarela simulada. Con un solo `traceId` se ve en Loki y en Jaeger el recorrido entero: búsqueda en Cocheras, consulta de ocupación en Reservas, reserva creada, pago aplicado y dirección habilitada en Cocheras. El evento inválido terminó en `cocheras.dlq` y disparó la alerta `EventosEnDLQ`.
 
 La observabilidad detectó dos problemas:
 
-1. **Deadlock en reservas simultáneas.** En algunas corridas, 9 de las 10 reservas respondieron 500 en lugar de 409. Los logs de Reservas mostraron `psycopg.errors.DeadlockDetected` en el `INSERT`: con varias transacciones esperándose en la restricción de exclusión, Postgres aborta algunas por deadlock. **Nunca hubo doble reserva**: siempre entró una sola, pero el cliente recibía un error de servidor en lugar de "franja ocupada".
+1. **Deadlock en reservas simultáneas.** En algunas corridas, 9 de las 10 reservas respondieron 500 en lugar de 409. Los logs de Reservas mostraron `psycopg.errors.DeadlockDetected` en el `INSERT`: con varias transacciones esperándose en la restricción de exclusión, Postgres aborta algunas por deadlock. **Nunca hubo doble reserva**: siempre entró una sola, pero el cliente recibía un error de servidor en lugar de "franja ocupada". Ya está corregido (PR #26): las altas sobre una misma cochera hacen fila con un lock por cochera y se reintentan si Postgres aborta la transacción. Con `scripts/demo.mjs`, 5 corridas de 15 reservas simultáneas dieron siempre 1 × 201 y 14 × 409, sin ningún 500.
 2. **RabbitMQ no arrancaba desde cero.** `infra/rabbitmq/definitions.json` no declaraba el virtual host ni usuarios, y con un volumen nuevo RabbitMQ fallaba con `Please create virtual host "/" prior to importing definitions`. Ya está corregido (PR #13).
 
 ## Reservas (implementado)
