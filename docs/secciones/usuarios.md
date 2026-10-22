@@ -88,7 +88,7 @@ Usuarios firma los tokens y el gateway los verifica **por su cuenta**, sin llama
 - El login compara contra un hash ficticio cuando el email no existe: tarda lo mismo y no permite averiguar qué emails están registrados.
 - El gateway limita el login a 10 intentos por minuto por IP.
 - Las claves las genera el servicio `jwt-claves` del compose la primera vez que se levanta (si ya existen no las toca, para no invalidar las sesiones) y no se commitean (`*.pem` en `.gitignore`).
-- `/metrics` es interno: el gateway responde `404` en `/api/usuarios/metrics`.
+- `/metrics` es interno: lo que llega por el gateway trae `X-Forwarded-For` y Usuarios responde `404`; Prometheus lo lee directo por la red de Docker.
 
 ## 7. Observabilidad
 

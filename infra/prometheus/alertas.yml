@@ -80,13 +80,14 @@ groups:
         annotations:
           resumen: "Más de 2% de errores 5xx en Usuarios durante 5 minutos"
 
-      # El gateway llama a /auth/verificar antes de cada request autenticada: si se pone lento,
-      # se pone lento todo ParkIN.
-      - alert: UsuariosVerificacionLenta
-        expr: histogram_quantile(0.95, sum(rate(usuarios_http_request_duration_seconds_bucket{metodo="GET",ruta="/auth/verificar"}[5m])) by (le)) > 0.1
+      # Login y refresh: si se ponen lentos nadie puede entrar ni renovar la sesión, y el front
+      # refresca el access token cada 15 minutos. bcrypt hace que un login tarde unos 100 ms;
+      # medio segundo de p95 ya es anormal (base lenta o CPU saturada).
+      - alert: UsuariosSesionLenta
+        expr: histogram_quantile(0.95, sum by (le) (rate(usuarios_http_request_duration_seconds_bucket{metodo="POST",ruta=~"/auth/(login|refresh)"}[5m]))) > 0.5
         for: 5m
         annotations:
-          resumen: "p95 de /auth/verificar mayor a 100 ms durante 5 minutos: frena todas las requests del gateway"
+          resumen: "p95 de login y refresh mayor a 500 ms durante 5 minutos: entrar y renovar la sesión se vuelve lento"
 
       - alert: UsuariosPosibleFuerzaBruta
         expr: sum(increase(usuarios_logins_total{resultado="fallido"}[5m])) > 30

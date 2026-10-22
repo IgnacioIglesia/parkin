@@ -38,7 +38,7 @@ Con `docker compose up --build`:
 
 El `traceId` de una request llega en el header de respuesta `X-Trace-Id` del gateway. Grafana abre sin login (acceso anónimo, solo para desarrollo).
 
-El dashboard muestra: servicios arriba, requests por segundo y latencia p95 por servicio; reservas por minuto y conflictos 409 (la competencia por la misma franja); operaciones GraphQL de Cocheras, aciertos de caché, eventos consumidos y consultas a Reservas; mensajes por cola de RabbitMQ (incluida la DLQ) y los logs de advertencia y error de todos los servicios.
+El dashboard muestra: servicios arriba, requests por segundo y latencia p95 por servicio; reservas por minuto y conflictos 409 (la competencia por la misma franja); operaciones GraphQL de Cocheras, aciertos de caché, eventos consumidos y consultas a Reservas; ingresos (correctos y fallidos), registros, renovaciones de sesión por resultado (con los tokens reutilizados en rojo) y latencia de login y refresh en Usuarios; mensajes por cola de RabbitMQ (incluida la DLQ) y los logs de advertencia y error de todos los servicios.
 
 ## Cómo sumar un servicio
 
@@ -60,7 +60,7 @@ Además de las de Reservas (más abajo), `infra/prometheus/alertas.yml` define:
 | `CocherasSinRabbitMQ` | El consumidor de Cocheras desconectado durante 1 minuto |
 | `CocherasNoLlegaAReservas` | Fallan las consultas de ocupación a Reservas durante 5 minutos |
 | `UsuariosErroresAltos` | Más de 2 % de errores 5xx en Usuarios durante 5 minutos |
-| `UsuariosVerificacionLenta` | p95 de `/auth/verificar` mayor a 100 ms durante 5 minutos (el gateway lo llama en cada request autenticada) |
+| `UsuariosSesionLenta` | p95 de login y refresh mayor a 500 ms durante 5 minutos (entrar y renovar la sesión se vuelve lento para todos) |
 | `UsuariosPosibleFuerzaBruta` | Más de 30 logins fallidos en 5 minutos |
 | `UsuariosRefreshReutilizado` | Se reutilizó un refresh token fuera de la ventana de gracia (posible sesión robada) |
 
