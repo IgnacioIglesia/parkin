@@ -39,6 +39,8 @@ services:
       DATABASE_URL: postgres://app:app@db-usuarios:5432/usuarios
       JWT_PRIVATE_KEY_PATH: /run/secrets/jwt_private.pem
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public.pem
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_SERVICE_NAME: usuarios
     volumes: ["./infra/jwt:/run/secrets:ro"]  # las genera jwt-claves si faltan
     ports: ["3001:3000"]
     depends_on:
