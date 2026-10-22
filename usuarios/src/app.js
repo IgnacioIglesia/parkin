@@ -25,7 +25,12 @@ app.get('/ready', async (req, res) => {
   }
 });
 
-app.get('/metrics', async (_req, res) => {
+// Solo para Prometheus, que entra directo por la red de Docker. Todo lo que pasa por el gateway
+// trae X-Forwarded-For: así las métricas no quedan a la vista de cualquier usuario logueado.
+app.get('/metrics', async (req, res) => {
+  if (req.get('x-forwarded-for')) {
+    return res.status(404).json({ error: { codigo: 'NO_ENCONTRADO', mensaje: 'Ruta inexistente' } });
+  }
   res.set('Content-Type', registro.contentType);
   res.end(await registro.metrics());
 });

@@ -121,7 +121,7 @@ Prometheus las recoge desde `infra/prometheus/prometheus.yml` y evalúa las aler
 
 **Logs.** JSON a stdout (`pino`) con `servicio`, `nivel`, `traceId` (del `traceparent` del gateway) y `usuarioId`; una línea por request con método, ruta, estado y `duracionMs`. No se registran `/health`, `/ready`, `/metrics` ni `/auth/verificar` (los llaman Docker, Prometheus y el gateway en cada request). Contraseñas y tokens se eliminan de cualquier log.
 
-**Métricas.** `GET /metrics`, recogido por Prometheus (job `usuarios`). Interno: el gateway responde 404 en `/api/usuarios/metrics`.
+**Métricas.** `GET /metrics`, recogido por Prometheus (job `usuarios`). Interno: lo que llega por el gateway trae `X-Forwarded-For` y Usuarios responde 404.
 
 | Métrica | Qué mide |
 |---|---|

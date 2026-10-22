@@ -12,13 +12,18 @@ const directorio = path.resolve(process.argv[2] ?? 'infra/jwt');
 const privada = path.join(directorio, 'jwt_private.pem');
 const publica = path.join(directorio, 'jwt_public.pem');
 
-// Si Docker creó una carpeta donde va una clave (pasa al montar un archivo que todavía no
-// existe), no hay forma de arreglarlo desde acá: se avisa con el comando para resolverlo.
+// Cuando otro contenedor (gateway, pagos) monta la clave pública como archivo, Docker crea esa
+// ruta como CARPETA vacía al crear el contenedor si el archivo todavía no existe: pasa en el
+// arranque en frío, aunque ese contenedor espere a este servicio. Una carpeta vacía se reemplaza
+// por la clave; el montaje se resuelve de nuevo cuando ese contenedor arranca, que es después.
 for (const archivo of [privada, publica]) {
-  if (fs.existsSync(archivo) && fs.statSync(archivo).isDirectory()) {
-    console.error(`${archivo} es una carpeta, no un archivo. Borrala y volvé a levantar: rm -r ${path.relative(process.cwd(), archivo)}`);
+  if (!fs.existsSync(archivo) || !fs.statSync(archivo).isDirectory()) continue;
+  if (fs.readdirSync(archivo).length > 0) {
+    console.error(`${archivo} es una carpeta con contenido, no una clave. Revisala y borrala a mano.`);
     process.exit(1);
   }
+  fs.rmdirSync(archivo);
+  console.log(`${path.basename(archivo)} era una carpeta vacía creada por Docker: se reemplaza por la clave.`);
 }
 
 fs.mkdirSync(directorio, { recursive: true });
