@@ -70,6 +70,9 @@ export function NotificacionesProvider({ children }) {
     // auth como función: en cada reconexión manda el access token vigente, no el del arranque.
     const socket = io(import.meta.env.VITE_API_URL || undefined, {
       path: '/ws',
+      // Solo WebSocket, sin long-polling: el gateway hace el upgrade en /ws, y el polling deja
+      // el aviso colgado de requests HTTP sueltos (y con varias réplicas exige sticky sessions).
+      transports: ['websocket'],
       auth: (cb) => cb({ token: accessTokenActual() }),
       reconnectionDelayMax: 30_000,
     });

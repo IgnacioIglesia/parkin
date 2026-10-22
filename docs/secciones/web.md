@@ -28,7 +28,7 @@ La web es el único cliente: conductores y propietarios usan la plataforma desde
 
 - **REST** con Usuarios (`/api/usuarios`), Reservas (`/api/reservas`) y Pagos (`/api/pagos`).
 - **GraphQL** con Cocheras (`/graphql`). Cada pantalla pide solo los campos que dibuja: el mapa, `id titulo precioHora tipoVehiculo ubicacionAproximada`; la ficha, además, horarios, fotos y dirección. Para la lista de reservas, todas las cocheras se piden en **una sola consulta** con un alias por id, en vez de una por fila.
-- **WebSocket** (Socket.IO en `/ws`). El token viaja en el handshake y se renueva en cada reconexión. Los eventos `reserva:confirmada`, `reserva:cancelada`, `reserva:expirada` y `pago:rechazado` muestran un aviso y recargan la reserva. El WebSocket solo acelera la noticia: la fuente de verdad es `GET /reservas/{id}`, que la pantalla consulta cada 5 segundos mientras la reserva espera el pago.
+- **WebSocket** (Socket.IO en `/ws`). El token viaja en el handshake y se renueva en cada reconexión. Se usa solo el transporte WebSocket, sin long-polling. Los eventos `reserva:confirmada`, `reserva:cancelada`, `reserva:expirada` y `pago:rechazado` muestran un aviso y recargan la reserva. El WebSocket solo acelera la noticia: la fuente de verdad es `GET /reservas/{id}`, que la pantalla consulta cada 5 segundos mientras la reserva espera el pago.
 
 Cada servicio responde sus errores a su manera (Usuarios `{error}`, Reservas `{detail}`, GraphQL `errors[].extensions.code`, el gateway HTML). Un único cliente HTTP los traduce a un mismo formato y a mensajes en castellano.
 
@@ -69,5 +69,5 @@ La interfaz toma la forma de un **tablero de partidas**. Códigos, precios, hora
 También se probó en 390 px de ancho.
 
 **Pendiente:**
-- El pago sigue el contrato de Pagos: `POST /api/pagos { reservaId }` con su propia `Idempotency-Key` (reusada si se reintenta), reintento automático ante `404 RESERVA_DESCONOCIDA` (Pagos todavía no recibió `reserva.creada`) y el checkout en otra pestaña, mientras la reserva se actualiza sola al confirmarse. El servicio de Pagos real ya está integrado y el mismo flujo de API se probó a través del gateway (reservar, pagar, aprobar o rechazar, y los avisos por WebSocket); **falta probar la pantalla en el navegador** contra Pagos real.
+- El pago sigue el contrato de Pagos: `POST /api/pagos { reservaId }` con su propia `Idempotency-Key` (reusada si se reintenta), reintento automático ante `404 RESERVA_DESCONOCIDA` (Pagos todavía no recibió `reserva.creada`) y el checkout en otra pestaña, mientras la reserva se actualiza sola al confirmarse. Probado en el navegador contra Pagos real y la pasarela simulada: se reserva, se toca «Pagá», el checkout se abre en otra pestaña, se aprueba y la reserva pasa sola a **CONFIRMADA** (en alrededor de un segundo, con el aviso por WebSocket) mostrando la dirección exacta.
 - Los bloqueos de fechas puntuales no están en el contrato GraphQL.

@@ -72,6 +72,35 @@ groups:
         annotations:
           resumen: "Cocheras no puede consultar la ocupación en Reservas: la búsqueda no filtra cocheras ocupadas"
 
+  - name: usuarios
+    rules:
+      - alert: UsuariosErroresAltos
+        expr: sum(rate(usuarios_http_requests_total{estado=~"5.."}[5m])) / sum(rate(usuarios_http_requests_total[5m])) > 0.02
+        for: 5m
+        annotations:
+          resumen: "Más de 2% de errores 5xx en Usuarios durante 5 minutos"
+
+      # El gateway llama a /auth/verificar antes de cada request autenticada: si se pone lento,
+      # se pone lento todo ParkIN.
+      - alert: UsuariosVerificacionLenta
+        expr: histogram_quantile(0.95, sum(rate(usuarios_http_request_duration_seconds_bucket{metodo="GET",ruta="/auth/verificar"}[5m])) by (le)) > 0.1
+        for: 5m
+        annotations:
+          resumen: "p95 de /auth/verificar mayor a 100 ms durante 5 minutos: frena todas las requests del gateway"
+
+      - alert: UsuariosPosibleFuerzaBruta
+        expr: sum(increase(usuarios_logins_total{resultado="fallido"}[5m])) > 30
+        for: 1m
+        annotations:
+          resumen: "Más de 30 logins fallidos en 5 minutos: posible ataque de fuerza bruta"
+
+      # Un refresh token ya usado volvió a aparecer fuera de la ventana de gracia: Usuarios ya
+      # cerró todas las sesiones de esa persona, pero alguien tenía su token.
+      - alert: UsuariosRefreshReutilizado
+        expr: sum(increase(usuarios_refresh_total{resultado="reutilizado"}[10m])) > 0
+        annotations:
+          resumen: "Se reutilizó un refresh token: posible sesión robada"
+
   - name: infraestructura
     rules:
       - alert: ServicioCaido

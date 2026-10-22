@@ -45,7 +45,7 @@ Errores: `{ "error": { "codigo": "...", "mensaje": "...", "detalles": [...] } }`
 | POST | `/auth/refresh` | no | 200 sesión · 401 `TOKEN_INVALIDO` / `TOKEN_REUTILIZADO` |
 | POST | `/auth/logout` | no | 204 (revoca ese refresh token) |
 | POST | `/auth/logout-todos` | sí | 204 (revoca todas las sesiones) |
-| GET | `/auth/verificar` | — | Para el gateway: 204 con `X-User-Id` y `X-User-Roles` · 204 sin identidad si no hay token · 401 |
+| GET | `/auth/verificar` | — | Alternativa (hoy sin uso): 204 con `X-User-Id` y `X-User-Roles` · 204 sin identidad si no hay token · 401 |
 | GET | `/users/me` | sí | 200 usuario |
 | PATCH | `/users/me` | sí | 200 usuario · 422 |
 | POST | `/users/me/roles` | sí | 200 `{ usuario, accessToken }` |
@@ -53,7 +53,7 @@ Errores: `{ "error": { "codigo": "...", "mensaje": "...", "detalles": [...] } }`
 | GET | `/.well-known/jwks.json` | no | JWKS con la clave pública |
 | GET | `/auth/public-key` | no | Clave pública en PEM |
 | GET | `/health`, `/ready` | no | 200 / 503 |
-| GET | `/metrics` | no | Métricas Prometheus (interno; el gateway no lo expone) |
+| GET | `/metrics` | no | Métricas Prometheus (solo directo; por el gateway, 404) |
 
 Los cinco primeros de `docs/contratos.md` (sección 3) están implementados tal cual; el resto son
 agregados que hay que proponer al contrato por PR.
@@ -92,45 +92,18 @@ RS256, header con `kid`. Claims (cumple los mínimos del contrato: `sub`, `roles
 El gateway verifica con `infra/jwt/jwt_public.pem` o con `GET /.well-known/jwks.json`.
 Rutas públicas: `/auth/*` salvo `/auth/logout-todos`.
 
-## Integración con el gateway (auth_request)
+## Integración con el gateway
 
-El NGINX de código abierto no valida JWT, así que el gateway le pregunta a Usuarios con
-`auth_request` y reenvía la identidad a los servicios. Probado de punta a punta (ver
-`docs/secciones/usuarios.md`). Cambios en `gateway/nginx.conf`:
+El gateway valida los JWT **por su cuenta**, sin llamar a Usuarios: `gateway/jwt.js` (njs) verifica la
+firma RS256 con `infra/jwt/jwt_public.pem`, controla `exp`, `nbf` y el emisor `parkin-usuarios`, y
+reenvía la identidad a los servicios en `X-User-Id` y `X-User-Roles`. Usuarios solo firma.
 
-```nginx
-# 1) En el bloque server, en lugar de  proxy_set_header X-User-Id "";
-set $usuario_id "";
-set $usuario_roles "";
-proxy_set_header X-User-Id $usuario_id;
-proxy_set_header X-User-Roles $usuario_roles;
+`GET /auth/verificar` hace la misma verificación desde Usuarios, con los mismos headers. Hoy el
+gateway no lo usa; queda como alternativa (por ejemplo, con un NGINX sin njs, vía `auth_request`).
 
-# 2) Ubicaciones nuevas
-location = /_verificar {
-    internal;
-    # Variable propia: la subrequest comparte variables con el request principal,
-    # y pisar $upstream mandaría el request original a Usuarios.
-    set $upstream_verificar http://usuarios:3000/auth/verificar;
-    proxy_pass $upstream_verificar;
-    proxy_pass_request_body off;
-    proxy_set_header Content-Length "";
-    proxy_set_header Authorization $http_authorization;
-    proxy_set_header traceparent $traceparent;
-}
-
-location = /api/usuarios/metrics {
-    return 404;
-}
-
-# 3) Al principio de  location /api/reservas,  location /api/pagos  y  location /graphql
-auth_request /_verificar;
-auth_request_set $usuario_id $upstream_http_x_user_id;
-auth_request_set $usuario_roles $upstream_http_x_user_roles;
-```
-
-Además, el healthcheck del gateway (`gateway/Dockerfile`) usa `http://localhost/health`: en Alpine
-`localhost` resuelve a IPv6 y nginx escucha solo en IPv4, por eso figura `unhealthy` aunque funciona.
-Con `http://127.0.0.1/health` se corrige.
+`/metrics` es para Prometheus, que lo pide directo por la red de Docker. Lo que llega por el gateway
+trae `X-Forwarded-For` y recibe `404`, así las métricas no quedan a la vista de cualquier usuario
+logueado.
 
 ## Tests
 
