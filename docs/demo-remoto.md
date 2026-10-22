@@ -26,6 +26,33 @@ Abrí esta URL desde cualquier dispositivo:  https://algo-raro-1234.trycloudflar
 
 Esa única URL sirve la web, la API, el WebSocket y la página de pago, todos en el mismo origen: no hay CORS que configurar ni variables que reconstruir, y funciona con cualquier navegador y desde el celular. Dejá la terminal abierta; `Ctrl+C` cierra el túnel y deja la pasarela como estaba.
 
+## Cada vez que lo quiero iniciar
+
+```bash
+open -a Docker                                   # abrir Docker Desktop y esperar a que la ballena deje de moverse
+cd ~/orca/projects/parkIN                        # (la carpeta donde está el repo)
+docker compose up -d                             # arranca lo que esté parado; no borra datos
+docker compose ps                                # todo en "healthy" (jwt-claves figura como Exited (0): es lo correcto)
+tmux new -As demo                                # abre (o retoma) la sesión de tmux
+bash infra/demo-remoto.sh --sin-levantar         # abre el túnel y muestra la URL
+# Ctrl+B y después D: dejar corriendo y salir de tmux
+```
+
+Para volver a ver la URL o cerrar el túnel: `tmux attach -t demo` (y `Ctrl+C` para cerrarlo). Si cambiaste código, usá `docker compose up --build -d` en vez de `docker compose up -d`.
+
+## Que no se apague solo
+
+Todos los servicios del compose (menos `jwt-claves`, que corre una sola vez) tienen `restart: unless-stopped`: si Docker o la Mac se reinician, vuelven solos, bases de datos y RabbitMQ incluidos. Aun así, hay cuatro cosas que el sistema no puede hacer por sí mismo:
+
+| Qué | Cómo evitar que se corte |
+|---|---|
+| Docker Desktop cerrado | Docker Desktop → Settings → General → **Start Docker Desktop when you sign in to your computer** |
+| La Mac se duerme | Dejar la tapa abierta y, en otra ventana de tmux, `caffeinate -dims` |
+| Cerrar la tapa | Con la tapa cerrada la Mac se duerme y el túnel se corta. Opciones: modo "clamshell" (conectada a la corriente con un monitor, teclado y mouse externos), o `sudo pmset -a disablesleep 1` (para deshacerlo: `sudo pmset -a disablesleep 0`). No la guardes en una mochila así: se calienta |
+| El túnel | No es un contenedor: hay que correr `bash infra/demo-remoto.sh` y su URL cambia cada vez |
+
+Para algo que quede encendido sin tu computadora hace falta un servidor (ver la opción B de más abajo).
+
 ## Opción B: el front de Vercel con el backend en tu laptop
 
 Sirve si querés mostrar el despliegue de Vercel.
