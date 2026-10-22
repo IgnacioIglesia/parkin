@@ -7,11 +7,15 @@
     "node": ">=22"
   },
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
+    "start": "node --import ./src/telemetria.js src/index.js",
+    "dev": "node --watch --import ./src/telemetria.js src/index.js",
     "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "dependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/auto-instrumentations-node": "0.80.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
+    "@opentelemetry/sdk-node": "0.222.0",
     "bcryptjs": "^2.4.3",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.3",
