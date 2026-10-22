@@ -51,19 +51,62 @@ Cómo llegan las rutas a cada servicio (implementado en `gateway/nginx.conf`):
 
 - **Pasarela de prueba por el gateway (solo demo):** para que el checkout se abra desde un navegador remoto (por ejemplo con un túnel público hacia el gateway, o desde el front en Vercel) sin exponer el puerto de `pasarela-mock`, el gateway publica **únicamente** la página de pago y el botón que decide el resultado. `/ordenes` (crear órdenes y reembolsar) es de Pagos y **no se expone**: da `404`, igual que cualquier otra ruta de la pasarela, `/health` o los intentos de recorrer rutas. Para que la `checkoutUrl` que devuelve Pagos use esta ruta, `pasarela-mock` se levanta con `PASARELA_PUBLIC_URL=<URL pública del gateway>/pasarela`; por ejemplo, `PASARELA_PUBLIC_URL=https://algo.trycloudflare.com/pasarela docker compose up -d pasarela-mock`. La ruta no necesita token (el usuario llega desde la pasarela, no desde la app) y quien conozca el id de una orden puede aprobarla o rechazarla: es aceptable para una simulación, y es una de las cosas que cambia al usar una pasarela real, donde el aviso lo firma el proveedor.
 - **Errores del gateway:** token ausente, inválido o vencido → `401` con `{"codigo":"NO_AUTENTICADO", ...}` y `WWW-Authenticate: Bearer`. Si el gateway no tiene la clave pública → `503` con `{"codigo":"AUTH_NO_DISPONIBLE", ...}` (falla cerrado: no deja pasar a nadie). El front, ante un 401, refresca el token una vez y reintenta.
-- **Clave pública:** el gateway lee `/etc/nginx/jwt_public.pem` (en `docker-compose.yml`, montada desde `infra/jwt/jwt_public.pem`, generada con `infra/jwt/generar-claves.sh`). Solo la pública: la privada no debe estar en el gateway. Si se rotan las claves, hay que reiniciar el gateway.
+- **Clave pública:** el gateway lee `/etc/nginx/jwt_public.pem` (en `docker-compose.yml`, montada desde `infra/jwt/jwt_public.pem`; la genera el servicio `jwt-claves` del compose si falta, o a mano `infra/jwt/generar-claves.sh`). Solo la pública: la privada no debe estar en el gateway. Si se rotan las claves, hay que reiniciar el gateway.
 - Los servicios igual pueden volver a verificar el token (defensa en profundidad), como hace Usuarios.
 - `/cocheras/{id}/ocupacion` (Reservas) es interno: Cocheras lo llama directo a `reservas:8000`, no pasa por el gateway.
 
 ## 3. REST: Usuarios (`/api/usuarios`)
 
-| Método | Endpoint | Descripción |
+| Método | Endpoint | Token | Descripción |
+|---|---|---|---|
+| POST | `/auth/register` | No | Crea un usuario con sus roles y devuelve la sesión |
+| POST | `/auth/login` | No | Devuelve access token y refresh token |
+| POST | `/auth/refresh` | No | Rota el refresh token y devuelve una sesión nueva |
+| POST | `/auth/logout` | No | Revoca ese refresh token |
+| POST | `/auth/logout-todos` | Sí (lo verifica Usuarios) | Revoca todas las sesiones del usuario |
+| GET | `/auth/verificar` | Opcional | Valida el JWT y devuelve la identidad en `X-User-Id` y `X-User-Roles`. Alternativa a `gateway/jwt.js`; hoy el gateway no lo usa |
+| GET | `/users/me` | Sí | Perfil del usuario autenticado |
+| PATCH | `/users/me` | Sí | Actualiza nombre y teléfono |
+| POST | `/users/me/roles` | Sí | Suma un rol y devuelve un access token con los roles nuevos |
+| GET | `/users/{id}` | Sí | Perfil público mínimo: `{ id, nombre }` |
+| GET | `/.well-known/jwks.json` | No | Clave pública en formato JWKS (`kid`, `alg: RS256`) |
+
+Cuerpos:
+
+- `POST /auth/register`: `{ "email", "password" (8 a 72 caracteres), "nombre", "telefono"?, "roles"?: ["CONDUCTOR", "PROPIETARIO"] }`. Sin `roles`, `["CONDUCTOR"]`. El email se guarda en minúsculas.
+- `POST /auth/login`: `{ "email", "password" }`.
+- `POST /auth/refresh` y `POST /auth/logout`: `{ "refreshToken" }`.
+- `PATCH /users/me`: `{ "nombre"?, "telefono"? }` (al menos uno; `telefono: null` lo borra).
+- `POST /users/me/roles`: `{ "rol": "PROPIETARIO" | "CONDUCTOR" }` → `{ "usuario", "accessToken" }`.
+
+Sesión (respuesta de register, login y refresh):
+
+```json
+{
+  "accessToken": "eyJ...",
+  "refreshToken": "opaco",
+  "tokenType": "Bearer",
+  "expiresIn": 900,
+  "usuario": { "id": "uuid", "email": "...", "nombre": "...", "telefono": null, "roles": ["CONDUCTOR"], "creadoEn": "ISO-8601" }
+}
+```
+
+- El access token es un JWT RS256 con `sub`, `roles`, `email`, `iss: "parkin-usuarios"`, `iat`, `exp` y `kid` en el header.
+- El refresh token es opaco, dura 7 días y sirve **una sola vez**: `/auth/refresh` lo revoca y entrega otro. Si llega uno ya usado, se toma como robo y se revocan todas las sesiones (`401 TOKEN_REUTILIZADO`). Excepción: dentro de los 30 s posteriores a su rotación se acepta, por si el navegador recargó justo durante el refresh. `logout` y `logout-todos` no tienen esa gracia.
+- Clientes con varias pestañas: hacer un solo refresh a la vez, o el segundo se toma como reuso.
+
+Errores: `{ "error": { "codigo", "mensaje", "detalles"? } }`.
+
+| Código HTTP | `codigo` | Cuándo |
 |---|---|---|
-| POST | `/auth/register` | Crea un usuario con su rol |
-| POST | `/auth/login` | Devuelve access token y refresh token |
-| POST | `/auth/refresh` | Renueva el access token |
-| GET | `/users/me` | Perfil del usuario autenticado |
-| PATCH | `/users/me` | Actualiza datos de contacto |
+| 401 | `CREDENCIALES_INVALIDAS` | Login con email o contraseña incorrectos (mismo mensaje en los dos casos) |
+| 401 | `NO_AUTENTICADO`, `TOKEN_INVALIDO` | Falta el token, o el access o refresh token no es válido o venció |
+| 401 | `TOKEN_REUTILIZADO` | Refresh token ya usado fuera de la ventana de gracia |
+| 404 | `NO_ENCONTRADO` | Usuario o ruta inexistente |
+| 409 | `EMAIL_EN_USO` | Registro con un email existente |
+| 422 | `DATOS_INVALIDOS` | Validación; `detalles` trae `[{ campo, mensaje }]` |
+
+`GET /health`, `GET /ready` y `GET /metrics` son internos. `/metrics` responde `404` a lo que llega por el gateway (trae `X-Forwarded-For`); Prometheus lo lee directo.
 
 ## 4. REST: Reservas (`/api/reservas`)
 
