@@ -11,16 +11,15 @@
 //   node scripts/demo.mjs
 //   CONDUCTORES=20 node scripts/demo.mjs
 //
-// Variables: GATEWAY_URL (http://localhost:8080), RABBITMQ_API (http://localhost:15672),
-// GRAFANA_URL (http://localhost:3030), JAEGER_URL (http://localhost:16686), CONDUCTORES (10).
+// Variables: GATEWAY_URL (http://localhost:8080), GRAFANA_URL (http://localhost:3030),
+// JAEGER_URL (http://localhost:16686), CONDUCTORES (10).
 //
-// Mientras Pagos no tenga la pasarela, el pago se simula publicando pago.aprobado en
-// RabbitMQ, que es exactamente lo que va a publicar Pagos al recibir el webhook.
+// El pago pasa por Pagos y la pasarela simulada: el script toca "Aprobar" en la página de
+// checkout como lo haría una persona, y la pasarela avisa a Pagos por el webhook firmado.
 
 import { randomBytes, randomUUID } from 'node:crypto';
 
 const GATEWAY = process.env.GATEWAY_URL ?? 'http://localhost:8080';
-const RABBITMQ_API = process.env.RABBITMQ_API ?? 'http://localhost:15672';
 const GRAFANA = process.env.GRAFANA_URL ?? 'http://localhost:3030';
 const JAEGER = process.env.JAEGER_URL ?? 'http://localhost:16686';
 const CONDUCTORES = Number(process.env.CONDUCTORES ?? 10);
@@ -78,22 +77,22 @@ function franjaDeManana() {
   return { desde: `${manana}T14:00:00-03:00`, hasta: `${manana}T16:00:00-03:00` };
 }
 
-async function publicarEnRabbit(routingKey, evento) {
-  const res = await fetch(`${RABBITMQ_API}/api/exchanges/%2F/cocheras.eventos/publish`, {
-    method: 'POST',
-    headers: {
-      authorization: `Basic ${Buffer.from('guest:guest').toString('base64')}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      routing_key: routingKey,
-      payload: JSON.stringify(evento),
-      payload_encoding: 'string',
-      properties: { delivery_mode: 2, content_type: 'application/json' },
-    }),
-  });
-  const { routed } = await res.json();
-  if (!routed) throw new Error(`RabbitMQ no enrutó ${routingKey}`);
+// Pagos arma su copia de la reserva con el evento reserva.creada; si todavía no llegó
+// responde 404 RESERVA_DESCONOCIDA y hay que reintentar (contratos §5).
+async function iniciarPago(reservaId, token, traceId) {
+  const idempotencia = randomUUID();
+  for (let intento = 0; intento < 20; intento++) {
+    const r = await pedir('/api/pagos', {
+      metodo: 'POST',
+      token,
+      cuerpo: { reservaId },
+      headers: { 'idempotency-key': idempotencia, traceparent: traceparent(traceId) },
+    });
+    if (r.estado === 201 || r.estado === 200) return r.datos;
+    if (r.estado !== 404) throw new Error(`Pagos respondió ${r.estado}: ${JSON.stringify(r.datos)}`);
+    await esperar(500);
+  }
+  throw new Error('Pagos nunca recibió la reserva (reserva.creada)');
 }
 
 async function main() {
@@ -169,14 +168,16 @@ async function main() {
   console.log(`   Reservó ${ganador.conductor.nombre}: reserva ${reserva.id}, $${reserva.monto}, ${reserva.estado}.`);
   console.log(`   El resto recibió "franja ocupada": la base no permite dos reservas solapadas.`);
 
-  paso(5, 'Se aprueba el pago de la reserva (simulado: pago.aprobado en RabbitMQ)');
-  await publicarEnRabbit('pago.aprobado', {
-    eventId: randomUUID(),
-    tipo: 'pago.aprobado',
-    ocurridoEn: new Date().toISOString(),
-    traceId: ganador.traceId,
-    datos: { reservaId: reserva.id, pagoId: randomUUID(), monto: reserva.monto, moneda: 'UYU' },
+  paso(5, `${ganador.conductor.nombre} paga en la pasarela`);
+  const pago = await iniciarPago(reserva.id, ganador.conductor.token, ganador.traceId);
+  console.log(`   Pago ${pago.pagoId}: $${pago.monto} ${pago.moneda}, ${pago.estado}. Checkout: ${pago.checkoutUrl}`);
+  const resultado = await fetch(`${pago.checkoutUrl}/resultado`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ estado: 'approved' }),
   });
+  if (!resultado.ok) throw new Error(`La pasarela respondió ${resultado.status}`);
+  console.log('   Se tocó "Aprobar pago"; la pasarela avisó a Pagos por el webhook firmado.');
   let estado;
   for (let i = 0; i < 30 && estado !== 'CONFIRMADA'; i++) {
     await esperar(500);
