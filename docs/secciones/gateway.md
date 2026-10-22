@@ -107,6 +107,10 @@ El front puede estar en otro dominio (Vercel) que el gateway, así que el navega
 
 Si el cliente no manda `traceparent` (W3C), el gateway lo genera a partir de su `$request_id`. Lo reenvía a cada servicio, y los servicios lo propagan en sus llamadas y dentro de cada evento de RabbitMQ. Así un pedido se puede seguir por todos los servicios con un único `traceId`. El gateway lo devuelve en el header `X-Trace-Id` (expuesto por CORS para que el front lo pueda mostrar o loguear).
 
+**Logs.** Cada request deja una línea JSON con los mismos campos que los servicios (`nivel`, `servicio`, `traceId`, `usuarioId`), más método, ruta original sin query, estado, `duracionMs` y a qué contenedor fue. El `nivel` sale del estado (`warn` para `4xx`, `error` para `5xx`). Alloy los manda a Loki igual que los de los servicios, así que buscando un `traceId` aparece primero la línea del gateway y después la de cada servicio por el que pasó. No se loguea `/health` ni, nunca, headers, cuerpos o la query.
+
+**Evidencia:** un pedido con `traceparent` propio quedó en el log del gateway con ese `traceId` y el `usuarioId` del token, y la búsqueda de ese `traceId` en Loki devolvió la línea del gateway y la de Reservas. Un `401` y un `404` quedaron con `nivel: warn`, y ni el token ni la query aparecen en ninguna línea.
+
 ## 8. WebSocket y pasarela de prueba
 
 **`/ws`.** Hace proxy de Socket.IO hacia Pagos con `Upgrade` y `Connection: upgrade`, y un `proxy_read_timeout` de una hora para que las conexiones abiertas no se corten. El token no viaja en un header sino en el handshake, así que no lo valida el gateway: lo verifica Pagos al conectar.
@@ -126,7 +130,7 @@ En el compose, el gateway espera a que el servicio `jwt-claves` termine de gener
 
 ## 10. Provisorio o pendiente
 
-- **Logs.** El gateway usa el formato de acceso por defecto de NGINX, en texto. Para cumplir la convención del resto de los servicios (JSON con `traceId`) hay que definir un `log_format` en JSON que incluya `$trace_id`, `$usuario_id`, el estado y la duración.
+- **Log de errores.** El log de acceso es JSON, pero los avisos de `jwt.js` (tokens rechazados) y los errores internos de NGINX salen por el log de errores, que NGINX solo escribe en texto.
 - **Métricas.** El gateway no expone métricas propias. Los servicios sí, así que las tasas de error y la latencia se ven por servicio.
 - **Varias réplicas de Pagos.** El contrato menciona *sticky sessions* para `/ws`. Hoy no hacen falta: hay una sola réplica, y con transporte WebSocket la conexión queda fija en una réplica. Si se escala Pagos y algún cliente usa *long polling*, habría que agregar `ip_hash` o `hash` en un `upstream`.
 - **Puertos de desarrollo.** El compose todavía expone algunos servicios directo en el host (por ejemplo, Pagos en `8084`) para probarlos sin gateway. En un despliegue real solo se publicaría el gateway.
