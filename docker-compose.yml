@@ -57,7 +57,10 @@ services:
       DATABASE_URL: postgres://app:app@db-pagos:5432/pagos
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
       REDIS_URL: redis://redis:6379
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public.pem
+      PASARELA_URL_PUBLICA: http://localhost:8090
       PASARELA_ACCESS_TOKEN: ${PASARELA_ACCESS_TOKEN:-}
+    volumes: ["./infra/jwt:/run/secrets:ro"]  # solo se usa la clave pública
     ports: ["3002:3000"]
     depends_on:
       db-pagos: { condition: service_healthy }
