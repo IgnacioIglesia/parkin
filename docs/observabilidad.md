@@ -59,6 +59,10 @@ Además de las de Reservas (más abajo), `infra/prometheus/alertas.yml` define:
 | `CocherasBusquedaLenta` | p95 de `buscarCocheras` mayor a 500 ms durante 5 minutos |
 | `CocherasSinRabbitMQ` | El consumidor de Cocheras desconectado durante 1 minuto |
 | `CocherasNoLlegaAReservas` | Fallan las consultas de ocupación a Reservas durante 5 minutos |
+| `UsuariosErroresAltos` | Más de 2 % de errores 5xx en Usuarios durante 5 minutos |
+| `UsuariosVerificacionLenta` | p95 de `/auth/verificar` mayor a 100 ms durante 5 minutos (el gateway lo llama en cada request autenticada) |
+| `UsuariosPosibleFuerzaBruta` | Más de 30 logins fallidos en 5 minutos |
+| `UsuariosRefreshReutilizado` | Se reutilizó un refresh token fuera de la ventana de gracia (posible sesión robada) |
 
 ## Cocheras (implementado)
 
@@ -131,5 +135,7 @@ Prometheus las recoge desde `infra/prometheus/prometheus.yml` y evalúa las aler
 | `usuarios_logins_total{resultado}` | `ok` o `fallido` |
 | `usuarios_refresh_total{resultado}` | `ok`, `gracia`, `invalido` o `reutilizado` |
 | `usuarios_verificaciones_total{resultado}` | Verificaciones de JWT del gateway: `ok`, `anonimo`, `invalido` |
+
+**Trazas.** OpenTelemetry con instrumentación automática de HTTP y pg, exportada a Jaeger igual que Cocheras (`usuarios/src/telemetria.js`, cargado con `node --import`; sin `OTEL_EXPORTER_OTLP_ENDPOINT` no hace nada). El span de cada request continúa el `traceparent` del gateway y su `traceId` es el de los logs y el header `X-Trace-Id`. Un login o un registro se ve como `POST` → consultas SQL. `/auth/verificar` no se traza: el gateway lo llama en cada request y llenaría Jaeger de trazas de una línea; se sigue en `usuarios_verificaciones_total` y en la alerta `UsuariosVerificacionLenta`. Las consultas de la migración al arrancar tampoco, porque no pertenecen a ninguna request.
 
 **Qué permite detectar.** Un pico de `usuarios_logins_total{resultado="fallido"}` indica un ataque de fuerza bruta (además del rate limiting del gateway); cualquier `usuarios_refresh_total{resultado="reutilizado"}` es una sesión posiblemente robada; muchas verificaciones `invalido` apuntan a un front con tokens vencidos que no refresca.
