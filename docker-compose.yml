@@ -6,6 +6,8 @@
 # Un servicio con `profiles: ["pendiente"]` no tiene código todavía. Cuando su responsable
 # lo mergea a main, borra esa línea y pasa a levantar con el resto.
 services:
+  # Todos los servicios (menos jwt-claves, que corre una vez) tienen restart: unless-stopped: si Docker o la
+  # Mac se reinician, vuelven solos, bases de datos y RabbitMQ incluidos.
   gateway:
     build: ./gateway
     # Solo la clave pública (verifica los JWT). La privada no debe estar en el gateway.
@@ -116,6 +118,7 @@ services:
     restart: unless-stopped
 
   db-usuarios:
+    restart: unless-stopped
     image: postgres:16
     environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: usuarios }
     ports: ["5441:5432"]
@@ -127,6 +130,7 @@ services:
       retries: 10
 
   db-cocheras:
+    restart: unless-stopped
     image: postgis/postgis:16-3.4
     environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: cocheras }
     ports: ["5442:5432"]
@@ -138,6 +142,7 @@ services:
       retries: 10
 
   db-reservas:
+    restart: unless-stopped
     image: postgres:16
     environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: reservas }
     ports: ["5443:5432"]
@@ -149,6 +154,7 @@ services:
       retries: 10
 
   db-pagos:
+    restart: unless-stopped
     image: postgres:16
     environment: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: pagos }
     ports: ["5444:5432"]
@@ -160,6 +166,7 @@ services:
       retries: 10
 
   rabbitmq:
+    restart: unless-stopped
     image: rabbitmq:3.13-management
     ports: ["5672:5672", "15672:15672"]
     # Exchange, colas y bindings se crean al arrancar (ver docs/contratos.md, sección 7).
@@ -173,6 +180,7 @@ services:
       retries: 10
 
   redis:
+    restart: unless-stopped
     image: redis:7
     ports: ["6379:6379"]
     healthcheck:
@@ -182,6 +190,7 @@ services:
       retries: 10
 
   prometheus:
+    restart: unless-stopped
     image: prom/prometheus:v2.53.0
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -189,11 +198,13 @@ services:
     ports: ["9090:9090"]
 
   loki:
+    restart: unless-stopped
     image: grafana/loki:3.1.0
     ports: ["3100:3100"]
 
   # Lee los logs de todos los contenedores y los manda a Loki (ver infra/alloy/config.alloy).
   alloy:
+    restart: unless-stopped
     image: grafana/alloy:v1.19.2
     command: ["run", "--server.http.listen-addr=0.0.0.0:12345", "/etc/alloy/config.alloy"]
     volumes:
@@ -203,11 +214,13 @@ services:
 
   # Recibe trazas OTLP por HTTP en el 4318 (OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318).
   jaeger:
+    restart: unless-stopped
     image: jaegertracing/all-in-one:1.58
     ports: ["16686:16686", "4318:4318"]
 
   # Datasources y dashboard se cargan solos (infra/grafana). Acceso anónimo: solo desarrollo.
   grafana:
+    restart: unless-stopped
     image: grafana/grafana:11.1.0
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
