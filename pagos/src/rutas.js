@@ -3,6 +3,7 @@ import { requiereAuth } from './auth.js';
 import { datosInvalidos } from './errores.js';
 import { firmaValida } from './firma.js';
 import { aRespuesta } from './pagos.js';
+import { conSpan } from './trazas.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -40,9 +41,16 @@ export function crearRutas({ servicio, verificar, secretoWebhook }) {
       throw datosInvalidos('El cuerpo no es JSON');
     }
     validarAviso(aviso);
+    // El aviso llega sin traceparent: se sigue la traza con la que el conductor inició el pago,
+    // así pago.aprobado / pago.rechazado y la confirmación en Reservas quedan en esa misma traza.
+    const traceIdSaga = (await servicio.traceIdDePago(aviso.referencia)) ?? req.traceId;
     // 200 también para un aviso repetido, así la pasarela no reintenta.
-    const resultado = await servicio.procesarWebhook(aviso, req.traceId);
-    req.log.info({ pagoId: aviso.referencia, resultado }, 'aviso de la pasarela procesado');
+    const resultado = await conSpan(
+      'procesar aviso de la pasarela',
+      { traceId: traceIdSaga, atributos: { 'pago.id': aviso.referencia, 'pago.estado_pasarela': aviso.estado } },
+      () => servicio.procesarWebhook(aviso, traceIdSaga),
+    );
+    req.log.info({ pagoId: aviso.referencia, resultado, traceIdSaga }, 'aviso de la pasarela procesado');
     res.json({ resultado });
   }));
 

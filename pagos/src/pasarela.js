@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { traceIdActivo } from './trazas.js';
 
 export class PasarelaNoDisponible extends Error {}
 
@@ -7,7 +8,9 @@ export class PasarelaNoDisponible extends Error {}
 export function crearPasarela({ url, timeoutMs = 5000 }) {
   async function llamar(metodo, ruta, cuerpo, traceId) {
     const headers = { 'content-type': 'application/json' };
-    if (traceId) headers.traceparent = `00-${traceId}-${randomBytes(8).toString('hex')}-01`;
+    // Con OpenTelemetry activo, la instrumentación de fetch ya manda el traceparent del span
+    // actual; armarlo a mano solo hace falta sin él.
+    if (traceId && !traceIdActivo()) headers.traceparent = `00-${traceId}-${randomBytes(8).toString('hex')}-01`;
     let respuesta;
     try {
       respuesta = await fetch(`${url}${ruta}`, {

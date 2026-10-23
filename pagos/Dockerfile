@@ -15,4 +15,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
   CMD wget -qO- "http://localhost:${PORT:-3000}/health" || exit 1
 
-CMD ["node", "src/server.js"]
+CMD ["node", "--import", "./src/telemetria.js", "src/server.js"]

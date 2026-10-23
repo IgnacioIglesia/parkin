@@ -41,6 +41,11 @@ export async function pagoPorId(db, pagoId, { paraActualizar = false } = {}) {
   return rows[0] ?? null;
 }
 
+export async function traceIdDePago(db, pagoId) {
+  const { rows } = await db.query('SELECT trace_id FROM pago WHERE id = $1', [pagoId]);
+  return rows[0]?.trace_id ?? null;
+}
+
 export async function pagoPorClave(db, clave) {
   const { rows } = await db.query('SELECT * FROM pago WHERE idempotency_key = $1', [clave]);
   return rows[0] ?? null;
@@ -54,11 +59,11 @@ export async function pagoVivoDeReserva(db, reservaId) {
   return rows[0] ?? null;
 }
 
-export async function insertarPago(db, { reservaId, usuarioId, monto, moneda, idempotencyKey }) {
+export async function insertarPago(db, { reservaId, usuarioId, monto, moneda, idempotencyKey, traceId = null }) {
   const { rows } = await db.query(
-    `INSERT INTO pago (reserva_id, usuario_id, monto, moneda, idempotency_key)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [reservaId, usuarioId, monto, moneda, idempotencyKey],
+    `INSERT INTO pago (reserva_id, usuario_id, monto, moneda, idempotency_key, trace_id)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [reservaId, usuarioId, monto, moneda, idempotencyKey, traceId],
   );
   return rows[0];
 }

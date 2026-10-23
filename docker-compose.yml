@@ -96,6 +96,8 @@ services:
       PASARELA_URL: http://pasarela-mock:8090
       PASARELA_WEBHOOK_SECRET: ${PASARELA_WEBHOOK_SECRET:-secreto-de-desarrollo}
       PAGOS_WEBHOOK_URL: http://pagos:3000/pagos/webhook
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+      OTEL_SERVICE_NAME: pagos
       LOG_LEVEL: ${LOG_LEVEL:-info}
     # Solo la clave pública (verifica los JWT). Se genera con infra/jwt/generar-claves.sh.
     volumes: ["./infra/jwt/jwt_public.pem:/etc/pagos/jwt_public.pem:ro"]

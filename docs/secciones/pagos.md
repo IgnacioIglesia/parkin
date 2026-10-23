@@ -14,7 +14,7 @@ Pagos cobra las reservas y avisa en tiempo real a conductores y propietarios. In
 | Mensajería | RabbitMQ con `amqplib` |
 | Tiempo real | Socket.IO con adaptador de Redis |
 | Autenticación | Verifica el JWT RS256 de Usuarios con la clave pública (`jsonwebtoken`) |
-| Logs y métricas | `pino` (JSON a stdout), `prom-client` |
+| Logs, métricas y trazas | `pino` (JSON a stdout), `prom-client`, OpenTelemetry exportado a Jaeger |
 
 ## 2. API
 
@@ -185,6 +185,22 @@ Para usar Mercado Pago real se reemplaza solo `pagos/src/pasarela.js`, que crea 
 
 **Alertas** (`infra/prometheus/alertas.yml`): más del 2 % de respuestas `5xx`, más de 100 eventos atascados en el outbox, y más de 3 reembolsos fallidos en 10 minutos.
 
+**Trazas.** OpenTelemetry exportado a Jaeger, con la misma receta que Cocheras y Usuarios (`src/telemetria.js`, cargado con `node --import`; sin `OTEL_EXPORTER_OTLP_ENDPOINT` no hace nada). Se instrumentan las requests, las consultas SQL hechas dentro de una request o de un evento, la llamada a la pasarela y los avisos por Socket.IO y Redis. Las consultas de la migración, el outbox vacío y el reintento de reembolsos cada 30 s no generan trazas.
+
+Pagos es el punto donde la saga cambiaba de traza, por dos motivos, y los dos se resolvieron:
+
+- **Los eventos traen el `traceId` en el cuerpo, no en headers AMQP.** Los spans `procesar reserva.*` y `publicar pago.*` se crean a mano (`src/trazas.js`), colgados de ese `traceId`, igual que en Cocheras. Por eso la instrumentación automática de `amqplib` está apagada.
+- **El aviso de la pasarela llega sin `traceparent`**, mucho después y desde otro sistema. Al crear el pago se guarda el `traceId` de la request en `pago.trace_id`. Al llegar el webhook, el span `procesar aviso de la pasarela` y el evento `pago.aprobado` o `pago.rechazado` se cuelgan de ese `traceId`. Así lo que pasa después en Reservas, Cocheras y el WebSocket queda en la traza del "Pagar".
+
+**Evidencia** (todo por el gateway, consultando la API de Jaeger):
+
+| Traza | Spans por servicio |
+|---|---|
+| **Reservar** | Reservas: `POST /reservas`, consultas, `publicar reserva.creada`. Cocheras: la query GraphQL del precio. Pagos: `procesar reserva.creada` y sus consultas |
+| **Pagar** | Pagos: `POST`, llamada a la pasarela, `procesar aviso de la pasarela`, `publicar pago.aprobado`, `procesar reserva.confirmada`, aviso por Socket.IO y Redis. Reservas: `procesar pago.aprobado`, `publicar reserva.confirmada`. Cocheras: `procesar reserva.confirmada` |
+
+Son dos trazas porque son dos acciones del conductor: reservar y pagar. Cada una queda completa en todos los servicios que toca.
+
 ## 12. Pruebas
 
 **Automáticas.** `npm test` corre 61 tests contra un PostgreSQL real, porque los bloqueos y los índices únicos son parte de lo que se prueba (`TEST_DATABASE_URL=postgres://app:app@localhost:5444/pagos_test npm test`). Cubren la API y sus errores, los pagos concurrentes, la firma HMAC, el webhook repetido y adulterado, los eventos fuera de orden y repetidos, el outbox y el WebSocket. Resultado: 61 de 61.
@@ -206,7 +222,7 @@ Para usar Mercado Pago real se reemplaza solo `pagos/src/pasarela.js`, que crea 
 
 ## 13. Provisorio o pendiente
 
-- **Trazas.** Pagos propaga el `traceId` en los logs, en el `traceparent` hacia la pasarela y dentro de los eventos, pero todavía no exporta spans a Jaeger como Reservas y Cocheras. Sumar OpenTelemetry completaría la traza de la saga en Jaeger.
+- **Padre desconocido en Jaeger.** Los spans que se cuelgan de un `traceId` suelto (eventos y webhook) no conocen el span padre, porque solo viaja el `traceId`. Jaeger los muestra en la traza correcta con el aviso "invalid parent span", igual que en Cocheras y Reservas. Mandar el `traceparent` completo en los eventos lo resolvería, pero cambia el contrato de los tres servicios.
 - **Puerto `8084`.** El compose todavía expone Pagos directo en el host, con el comentario "se quita cuando el gateway rutee `/api/pagos`". El gateway ya lo rutea, así que se puede quitar para que todo pase por el gateway.
 - **Pasarela simulada.** Guarda las órdenes en memoria (si se reinicia, se pierden), y quien conozca el id de una orden puede aprobarla o rechazarla desde la página. Es aceptable para una simulación. Con una pasarela real el resultado lo decide el proveedor y lo firma él.
 - **Moneda única.** Todo se cobra en UYU, como lo calcula Reservas.
