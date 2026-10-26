@@ -220,6 +220,34 @@ Son dos trazas porque son dos acciones del conductor: reservar y pagar. Cada una
 | Webhook sin firma | `401 FIRMA_INVALIDA` |
 | WebSocket con token falso | `TOKEN_INVALIDO` |
 
+### Capturas del flujo
+
+Tomadas con el sistema levantado con `docker compose up`, en el front (`localhost:8081`), la pasarela simulada y Jaeger.
+
+**1. El conductor tiene la reserva retenida y 10 minutos para pagar.**
+
+![Reserva retenida con cuenta regresiva y botón Pagá](../capturas/pago-02-reserva-pendiente.png)
+
+**2. La pasarela de prueba.** El monto lo calculó Reservas (2 h × $90); el conductor elige cómo termina el pago.
+
+![Pasarela de prueba con Aprobar y Rechazar](../capturas/pago-01-pasarela-checkout.png)
+
+**3. Pago aprobado: el aviso llega en vivo por WebSocket.** La reserva pasa a `CONFIRMADA` sin recargar la página, y recién ahí se muestra la dirección exacta.
+
+![Aviso "Tu reserva está confirmada" y la dirección exacta](../capturas/pago-03-aviso-reserva-confirmada.png)
+
+**4. Pago rechazado: la saga compensa.** Llegan los avisos `pago:rechazado` y `reserva:cancelada`, y la franja se libera.
+
+![Avisos de pago rechazado y reserva cancelada](../capturas/pago-04-aviso-pago-rechazado.png)
+
+**5. La pasarela no deja resolver dos veces la misma orden.**
+
+![Orden ya rechazada en la pasarela](../capturas/pago-05-pasarela-resuelta.png)
+
+**6. La saga completa en una sola traza de Jaeger.** Pagos recibe el "Pagar" y, cuando llega el aviso de la pasarela, publica `pago.aprobado`. Reservas lo procesa y publica `reserva.confirmada`. Pagos manda los avisos por WebSocket (`send`, vía Redis) y Cocheras invalida su caché. Son 3 servicios y 46 spans.
+
+![Traza de la saga del pago en Jaeger](../capturas/pago-06-jaeger-saga-del-pago.png)
+
 ## 13. Provisorio o pendiente
 
 - **Padre desconocido en Jaeger.** Los spans que se cuelgan de un `traceId` suelto (eventos y webhook) no conocen el span padre, porque solo viaja el `traceId`. Jaeger los muestra en la traza correcta con el aviso "invalid parent span", igual que en Cocheras y Reservas. Mandar el `traceparent` completo en los eventos lo resolvería, pero cambia el contrato de los tres servicios.

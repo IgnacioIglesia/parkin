@@ -110,6 +110,13 @@ groups:
         annotations:
           resumen: "Prometheus no puede leer las métricas de {{ $labels.job }}"
 
+      # gateway-exporter puede estar vivo (up == 1) con NGINX caído: nginx_up lo distingue.
+      - alert: GatewayCaido
+        expr: nginx_up == 0
+        for: 1m
+        annotations:
+          resumen: "El exportador no puede leer a NGINX: el gateway, único punto de entrada, no responde"
+
       - alert: EventosEnDLQ
         expr: sum(rabbitmq_detailed_queue_messages{queue="cocheras.dlq"}) > 0
         for: 1m
