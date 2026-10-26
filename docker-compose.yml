@@ -101,8 +101,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
     # Solo la clave pública (verifica los JWT). Se genera con infra/jwt/generar-claves.sh.
     volumes: ["./infra/jwt/jwt_public.pem:/etc/pagos/jwt_public.pem:ro"]
-    # Puerto expuesto solo para probar sin gateway; se quita cuando el gateway rutee /api/pagos
-    ports: ["8084:3000"]
+    # Sin puerto en el host: todo entra por el gateway (/api/pagos, /api/pagos/webhook y /ws).
     depends_on:
       jwt-claves: { condition: service_completed_successfully }
       db-pagos: { condition: service_healthy }

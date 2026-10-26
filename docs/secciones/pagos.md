@@ -223,6 +223,5 @@ Son dos trazas porque son dos acciones del conductor: reservar y pagar. Cada una
 ## 13. Provisorio o pendiente
 
 - **Padre desconocido en Jaeger.** Los spans que se cuelgan de un `traceId` suelto (eventos y webhook) no conocen el span padre, porque solo viaja el `traceId`. Jaeger los muestra en la traza correcta con el aviso "invalid parent span", igual que en Cocheras y Reservas. Mandar el `traceparent` completo en los eventos lo resolvería, pero cambia el contrato de los tres servicios.
-- **Puerto `8084`.** El compose todavía expone Pagos directo en el host, con el comentario "se quita cuando el gateway rutee `/api/pagos`". El gateway ya lo rutea, así que se puede quitar para que todo pase por el gateway.
 - **Pasarela simulada.** Guarda las órdenes en memoria (si se reinicia, se pierden), y quien conozca el id de una orden puede aprobarla o rechazarla desde la página. Es aceptable para una simulación. Con una pasarela real el resultado lo decide el proveedor y lo firma él.
 - **Moneda única.** Todo se cobra en UYU, como lo calcula Reservas.
