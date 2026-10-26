@@ -54,6 +54,7 @@ Además de las de Reservas (más abajo), `infra/prometheus/alertas.yml` define:
 | Alerta | Condición |
 |---|---|
 | `ServicioCaido` | Prometheus no puede leer las métricas de un servicio durante 1 minuto |
+| `GatewayCaido` | El exportador no puede leer a NGINX durante 1 minuto (`nginx_up == 0`): el único punto de entrada no responde |
 | `EventosEnDLQ` | Hay mensajes en `cocheras.dlq` durante 1 minuto |
 | `CocherasErroresInternos` | Más de 2 % de operaciones GraphQL con error interno durante 5 minutos |
 | `CocherasBusquedaLenta` | p95 de `buscarCocheras` mayor a 500 ms durante 5 minutos |
@@ -144,6 +145,10 @@ Prometheus las recoge desde `infra/prometheus/prometheus.yml` y evalúa las aler
 
 **Logs.** Una línea JSON por request (`log_format json` en `gateway/nginx.conf`) con los mismos campos que los servicios: `nivel`, `servicio` (`gateway`), `msg`, `traceId` y `usuarioId` (el del JWT validado; vacío si no hay token). Además trae `metodo`, `ruta` (la que pidió el cliente, sin query), `estado`, `duracionMs`, `bytes`, `upstream` (a qué contenedor fue) e `ip`. El `nivel` sale del estado: `error` para `5xx`, `warn` para `4xx` y `info` para el resto, así que en Loki `{servicio="gateway", nivel="warn"}` muestra los `401` y los `429`. No se registra `/health` (lo llama Docker cada 10 s), y nunca se loguean headers, cuerpos ni la query.
 
-Como el gateway es el que genera el `traceId`, su línea es la primera del recorrido: `{servicio=~".+"} |= "<traceId>"` trae la línea del gateway y la de cada servicio por el que pasó el pedido. Los avisos de `jwt.js` (tokens rechazados) y los errores de NGINX siguen saliendo en texto por el log de errores.
+Como el gateway es el que genera el `traceId`, su línea es la primera del recorrido: `{servicio=~".+"} |= "<traceId>"` trae la línea del gateway y la de cada servicio por el que pasó el pedido.
+
+El log de errores de NGINX (desde `warn`, incluye los tokens que `jwt.js` rechaza por mal formados) no puede ser JSON. Alloy le saca el nivel del texto con una etapa `stage.regex` en `infra/alloy/config.alloy`, así que también se filtra con `{servicio="gateway", nivel="warn"}`.
+
+**Métricas.** `stub_status` de NGINX en el puerto interno `8088` (no publicado en el host), traducido por el contenedor `gateway-exporter` (`nginx-prometheus-exporter`) y leído por Prometheus como job `gateway`: `nginx_up`, `nginx_http_requests_total` y conexiones activas, aceptadas y atendidas. La alerta `GatewayCaido` (`nginx_up == 0` durante 1 minuto) avisa si el único punto de entrada deja de responder. Son totales: los errores por código se ven en los logs.
 
 **Qué permite detectar.** Un pico de `warn` con `estado` `401` indica tokens vencidos o un intento de acceso sin sesión; con `429`, alguien superando el rate limiting. Un `502` en `upstream` vacío o con un servicio puntual indica que ese servicio está caído aunque el resto responda.

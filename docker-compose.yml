@@ -20,6 +20,14 @@ services:
     ports: ["8080:80"]
     restart: unless-stopped
 
+  # Traduce los contadores de NGINX (stub_status, puerto interno 8088 del gateway) al formato de
+  # Prometheus. No publica puertos: Prometheus lo lee por la red de Docker.
+  gateway-exporter:
+    image: nginx/nginx-prometheus-exporter:1.3.0
+    command: ["--nginx.scrape-uri=http://gateway:8088/stub_status"]
+    depends_on: [gateway]
+    restart: unless-stopped
+
   # Genera las claves JWT en infra/jwt si faltan y termina: así `docker compose up` funciona
   # desde cero. Usa la misma imagen que Usuarios. Corre como root para poder escribir en la
   # carpeta montada del host también en Linux y macOS.
