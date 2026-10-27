@@ -65,7 +65,7 @@ Los siete tipos de transparencia de Van Steen, y en qué medida se logran:
 | Ubicación | El cliente conoce una sola URL, la del gateway. Los servicios se ubican entre sí por nombre, no por dirección |
 | Reubicación | El gateway vuelve a resolver el nombre de cada servicio cada 10 segundos: si un contenedor se recrea con otra dirección, se lo sigue encontrando |
 | Migración | Igual que la reubicación: un servicio sin estado puede levantarse en otro lugar sin que el cliente lo note |
-| Replicación | La caché de búsquedas es una copia de los resultados que el usuario no distingue del original. Además, el diseño permite varias réplicas de un servicio que comparten cola y caché, aunque solo lo probamos con una |
+| Replicación | La caché de búsquedas es una copia de los resultados que el usuario no distingue del original. Además, el diseño permite varias réplicas de un servicio que comparten cola y caché, aunque solo lo probamos con dos réplicas de Reservas y de Pagos |
 | Concurrencia | Cada conductor reserva como si estuviera solo; si otro le ganó la franja, solo ve «esa franja acaba de ser reservada» |
 | Fallo | El outbox, las colas durables y las compensaciones ocultan la caída de un servicio. Si Pagos cae, el usuario reserva igual |
 

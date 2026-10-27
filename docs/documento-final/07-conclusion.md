@@ -40,7 +40,7 @@ La garantía central se probó y no solo se diseñó. En la prueba con 20 conduc
 
 Los declaramos en cada sección; los principales son:
 
-- **Una sola réplica.** El diseño permite varias réplicas por servicio, pero no lo probamos.
+- **Pocas réplicas probadas.** El diseño permite varias réplicas por servicio. Probamos 2 réplicas de Reservas y de Pagos en un solo equipo; no probamos más, ni Cocheras y Usuarios replicados, ni varias máquinas.
 - **Puertos de desarrollo.** El compose publica puertos que permiten saltearse el gateway; en un despliegue real se cerrarían.
 - **Pasarela simulada.** No se mueve dinero real.
 - **Cancelación sin plazos.** La política de cancelación todavía no los define.

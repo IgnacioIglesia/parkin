@@ -118,7 +118,7 @@ Defensa en profundidad, y además lo necesita igual: el WebSocket manda el token
 Solo `pagos/src/pasarela.js`, que crea la orden y reembolsa. Las rutas, el webhook, la saga y los reembolsos no cambian. Con una real, el resultado lo decide y lo firma el proveedor.
 
 **¿Cómo escala Pagos?**
-Es un servicio sin estado. El adaptador de Redis de Socket.IO hace que un aviso llegue al cliente aunque esté conectado a otra réplica, y el publicador del outbox usa `SKIP LOCKED` para que varias réplicas no se pisen. **Pero solo lo probamos con una réplica.**
+Es un servicio sin estado. El adaptador de Redis de Socket.IO hace que un aviso llegue al cliente aunque esté conectado a otra réplica, y el publicador del outbox usa `SKIP LOCKED` para que varias réplicas no se pisen. **Lo probamos con 2 réplicas de Pagos** (`scripts/probar-replicas.sh`): el conductor conectado a una y el propietario a la otra recibieron los 10 avisos de confirmación, y cada evento lo procesó una sola réplica. **No probamos con más de 2 ni con carga sostenida.**
 
 **¿Y si Redis se cae?**
 Si Redis no responde al arrancar, Pagos espera 5 segundos y arranca igual sin el adaptador. Con una sola réplica los avisos llegan igual. Antes se quedaba esperando a Redis para siempre, sin abrir el puerto; lo encontró Diego revisando el código, y hay un test que lo cubre.
@@ -129,7 +129,7 @@ Si Redis no responde al arrancar, Pagos espera 5 segundos y arranca igual sin el
 ## Límites (decilos antes de que pregunten)
 
 - **La pasarela es simulada.** No se mueve dinero real, y guarda las órdenes en memoria.
-- **Una sola réplica probada.** El diseño permite varias, pero no lo medimos.
+- **Solo 2 réplicas probadas**, en un solo equipo y sin carga sostenida. El diseño permite más, pero no lo medimos.
 - **Una sola moneda:** todo se cobra en pesos uruguayos, como lo calcula Reservas.
 - **El estado «finalizada» está previsto en Pagos**, pero Reservas todavía no publica `reserva.finalizada`, así que hoy Pagos nunca lo recibe.
 - **El contexto de traza viaja solo como `traceId` en los eventos**, y el gateway no figura como un tramo; en Jaeger algunos tramos muestran un aviso de padre desconocido.
