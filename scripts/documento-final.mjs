@@ -87,8 +87,9 @@ body { font: 11pt/1.45 "Times New Roman", Times, serif; color: #111; margin: 0; 
 .indice h1 { counter-increment: none; }
 .indice h1::before { content: none; }
 .indice ol { list-style: none; padding-left: 0; }
-.indice li { margin: 1.2mm 0; }
-.indice ol ol { padding-left: 7mm; font-size: 10pt; }
+.indice li { margin: 0.8mm 0; font-size: 10.5pt; }
+.indice ol ol { padding-left: 7mm; }
+.indice ol ol li { margin: 0.2mm 0; font-size: 9pt; line-height: 1.25; }
 .indice a { color: #111; text-decoration: none; }
 body { counter-reset: seccion; }
 .seccion { page-break-before: always; counter-reset: sub; }
@@ -109,7 +110,8 @@ code { font: 9pt Menlo, monospace; background: #f3f3f3; padding: 0 1mm; border-r
 pre { background: #f6f6f6; padding: 3mm; font-size: 8.5pt; overflow: hidden; white-space: pre-wrap; page-break-inside: avoid; }
 pre code { background: none; padding: 0; }
 img { max-width: 100%; max-height: 120mm; display: block; margin: 3mm auto; page-break-inside: avoid; }
-.leyenda { text-align: center; font-size: 9pt; color: #555; margin: -1mm 0 4mm; }
+.figura { page-break-inside: avoid; break-inside: avoid; margin: 3mm 0 4mm; }
+.leyenda { text-align: center; font-size: 9pt; color: #555; margin-top: -1mm; }
 .mermaid { text-align: center; margin: 4mm 0; page-break-inside: avoid; }
 .mermaid svg { max-width: 100%; max-height: 150mm; }
 blockquote { margin: 3mm 0; padding: 1mm 4mm; border-left: 3px solid #bbb; color: #444; }
@@ -133,12 +135,17 @@ secciones.forEach((md, i) => {
     h.id = 's' + i + '-' + j;
   });
   // El texto alternativo de cada captura se muestra como leyenda debajo.
+  // Cada imagen va en una figura con su leyenda, para que no queden en páginas distintas.
   s.querySelectorAll('img').forEach((img) => {
+    const figura = document.createElement('div');
+    figura.className = 'figura';
+    img.replaceWith(figura);
+    figura.append(img);
     if (!img.alt) return;
     const leyenda = document.createElement('div');
     leyenda.className = 'leyenda';
     leyenda.textContent = img.alt;
-    img.after(leyenda);
+    figura.append(leyenda);
   });
   s.querySelectorAll('pre code.language-mermaid').forEach((c) => {
     const div = document.createElement('div');
@@ -168,8 +175,13 @@ document.querySelectorAll('.seccion').forEach((s) => {
   indice.append(li);
 });
 
+// De a uno y con id propio: dibujados juntos, los nodos de un diagrama se mezclaban con los de otro.
 mermaid.initialize({ startOnLoad: false, theme: 'neutral', flowchart: { htmlLabels: false } });
-await mermaid.run({ querySelector: '.mermaid' });
+let numero = 0;
+for (const div of document.querySelectorAll('.mermaid')) {
+  const { svg } = await mermaid.render('diagrama-' + numero++, div.textContent);
+  div.innerHTML = svg;
+}
 await Promise.all([...document.images].map((img) => img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; })));
 document.title = 'listo';
 `;

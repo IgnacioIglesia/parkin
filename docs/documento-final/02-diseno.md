@@ -26,10 +26,10 @@ Es el corazón del problema: varios conductores pueden intentar reservar la mism
 
 La seguridad se aborda en sus cuatro aspectos:
 
-- **Autenticación.** Usuarios emite un JWT firmado con RS256 y un refresh token de un solo uso; si se reutiliza uno, se cierran todas las sesiones de esa persona (posible robo).
+- **Autenticación.** Usuarios emite un JWT firmado con RS256 y un refresh token de un solo uso; si se reutiliza uno pasados 30 segundos de gracia (que evitan cerrar la sesión por una recarga en mal momento), se cierran todas las sesiones de esa persona (posible robo).
 - **Autorización.** El gateway verifica el JWT y pasa la identidad y los roles a los servicios, descartando lo que mande el cliente. Cada servicio controla los permisos: solo el dueño edita su cochera, solo el conductor ve su pago.
-- **Confidencialidad.** La dirección de una cochera suele ser la casa del propietario. Todos ven una ubicación aproximada, fija, a 100-300 m de la real; la exacta solo la ven el dueño y el conductor con reserva confirmada. Las contraseñas se guardan con bcrypt, y los logs nunca incluyen contraseñas, tokens ni datos de tarjeta.
-- **Integridad.** El precio y el propietario se toman de Cocheras, nunca de lo que mande el cliente. Los cambios de estado son condicionales a la versión. El webhook de la pasarela solo se acepta con una firma HMAC válida.
+- **Confidencialidad.** La dirección de una cochera suele ser la casa del propietario. Todos ven una ubicación aproximada, fija, a 100-300 m de la real; la exacta solo la ven el dueño y el conductor con reserva confirmada, hasta que termina su franja. Las contraseñas se guardan con bcrypt, y los logs nunca incluyen contraseñas, tokens ni datos de tarjeta.
+- **Integridad.** El precio y el propietario se toman de Cocheras, nunca de lo que mande el cliente. Cada cambio de estado de una reserva se aplica solo si la reserva sigue en el estado esperado (y la cancelación, además, solo si nadie la modificó desde que se leyó, por su número de versión). El webhook de la pasarela solo se acepta con una firma HMAC válida.
 - **Fallos de seguridad.** Rate limiting en el gateway y validación de entrada en cada servicio. Las alertas detectan fuerza bruta (más de 30 logins fallidos en 5 minutos) y refresh tokens reutilizados.
 
 ### Confiabilidad y tolerancia a fallos
@@ -53,7 +53,7 @@ La **mantenibilidad** viene de servicios chicos con una sola responsabilidad, co
 
 ### Disponibilidad
 
-El sistema debe funcionar a toda hora, y sobre todo en las horas pico. Además de la tolerancia a fallos, la mensajería *at-least-once* con ACK manual hace que un servicio caído no pierda trabajo: lo procesa al volver. Si Pagos cae, se pueden seguir creando reservas (está probado).
+El sistema debe funcionar a toda hora, y sobre todo en las horas pico. Además de la tolerancia a fallos, la mensajería *at-least-once* con ACK manual hace que un servicio caído no pierda trabajo: lo procesa al volver. Si Pagos cae, se pueden seguir creando reservas (lo probamos apagando Pagos, reservando y volviéndolo a encender).
 
 ### Transparencia
 
@@ -65,7 +65,7 @@ Los siete tipos de transparencia de Van Steen, y en qué medida se logran:
 | Ubicación | El cliente conoce una sola URL, la del gateway. Los servicios se ubican entre sí por nombre, no por dirección |
 | Reubicación | El gateway vuelve a resolver el nombre de cada servicio cada 10 segundos: si un contenedor se recrea con otra dirección, se lo sigue encontrando |
 | Migración | Igual que la reubicación: un servicio sin estado puede levantarse en otro lugar sin que el cliente lo note |
-| Replicación | La caché de búsquedas es una copia de los resultados que el usuario no distingue del original. Las réplicas de un servicio comparten cola y caché (el diseño lo permite; se probó con una réplica) |
+| Replicación | La caché de búsquedas es una copia de los resultados que el usuario no distingue del original. Además, el diseño permite varias réplicas de un servicio que comparten cola y caché, aunque solo lo probamos con una |
 | Concurrencia | Cada conductor reserva como si estuviera solo; si otro le ganó la franja, solo ve «esa franja acaba de ser reservada» |
 | Fallo | El outbox, las colas durables y las compensaciones ocultan la caída de un servicio. Si Pagos cae, el usuario reserva igual |
 
@@ -78,13 +78,13 @@ Ocultarlas tendría un costo mayor que mostrarlas.
 
 ### Heterogeneidad
 
-Reservas está en Python y el resto de los servicios en Node.js. Las bases son las mismas en motor, pero independientes. Se integran porque se hablan por protocolos estándar (HTTP, GraphQL, AMQP, WebSocket) con los contratos escritos en `docs/contratos.md`. El **middleware** que enmascara esa heterogeneidad es el gateway (para el cliente) y RabbitMQ (entre servicios). La web es *responsive* y funciona igual en computadora y en celular.
+Reservas está en Python y el resto de los servicios en Node.js. Todas las bases usan PostgreSQL, pero cada una es independiente. Se integran porque se hablan por protocolos estándar (HTTP, GraphQL, AMQP, WebSocket) y con contratos escritos antes de implementar. El **middleware** que enmascara esa heterogeneidad es el gateway (para el cliente) y RabbitMQ (entre servicios). La web es *responsive* y funciona igual en computadora y en celular.
 
 ### Apertura
 
 Van Steen pide interfaces completas y neutras: que describan todo lo necesario para usar un componente sin depender de cómo está hecho.
 
-- **Las interfaces de parkIN cumplen eso:** `docs/contratos.md` define cada endpoint, cada evento y el esquema GraphQL antes de implementar, y cualquier cliente que hable HTTP puede usar la misma API que la web.
+- **Las interfaces de parkIN cumplen eso:** un documento de contratos define cada endpoint, cada evento y el esquema GraphQL antes de implementar, y cualquier cliente que hable HTTP puede usar la misma API que la web.
 - **Interoperabilidad:** Python y Node conviven sin adaptadores.
 - **Portabilidad:** todo corre en contenedores.
 - **Políticas separadas de mecanismos:** por ejemplo, el tiempo de la caché, el plazo de retención y los límites de las alertas son configuración, no código.
@@ -152,9 +152,30 @@ flowchart LR
 
 ### Organización física
 
-En la entrega, todo corre en una sola máquina con Docker Compose: un contenedor por servicio, una base PostgreSQL por servicio (la de Cocheras con PostGIS), RabbitMQ, Redis y la pila de observabilidad. Solo el gateway (y la web) deberían quedar publicados hacia afuera. El diagrama con las tecnologías está en `docs/arquitectura.md`.
+En la entrega, todo corre en una sola máquina con Docker Compose: un contenedor por servicio, una base PostgreSQL por servicio (la de Cocheras con PostGIS), RabbitMQ, Redis y la pila de observabilidad. Solo el gateway (y la web) deberían quedar publicados hacia afuera.
 
-**Límite:** el compose de desarrollo también publica los puertos de algunos servicios para probarlos directo, y en un despliegue real se cerrarían.
+```mermaid
+flowchart LR
+    W[Web React<br/>NGINX :8081] --> GW[Gateway NGINX + njs<br/>:8080]
+    GW -->|REST| U[Usuarios<br/>Node + Express]
+    GW -->|GraphQL| C[Cocheras<br/>Node + Apollo]
+    GW -->|REST| R[Reservas<br/>Python + FastAPI]
+    GW -->|REST + WebSocket| P[Pagos<br/>Node + Socket.IO]
+    R -->|GraphQL: precio y dueño| C
+    C -->|REST: ocupación| R
+    R <-->|AMQP| MQ[(RabbitMQ)]
+    P <-->|AMQP| MQ
+    MQ -->|AMQP| C
+    P <-->|REST + webhook firmado| PM[Pasarela simulada]
+    C --- RD[(Redis)]
+    P --- RD
+    U --- DBU[(PostgreSQL)]
+    C --- DBC[(PostgreSQL + PostGIS)]
+    R --- DBR[(PostgreSQL)]
+    P --- DBP[(PostgreSQL)]
+```
+
+**Límite:** el compose de desarrollo también publica los puertos de algunos servicios, de las cuatro bases, de RabbitMQ y de Redis, para probarlos sin pasar por el gateway. En un despliegue real se cerrarían.
 
 ### Flujo principal: reservar y pagar
 
@@ -164,7 +185,7 @@ En la entrega, todo corre en una sola máquina con Docker Compose: un contenedor
 4. Pagos publica `pago.aprobado`; Reservas confirma y publica `reserva.confirmada`. Cocheras habilita la dirección exacta para ese conductor, y Pagos avisa por WebSocket al conductor y al propietario.
 5. Si el pago se rechaza o pasan 10 minutos, la reserva se cancela o expira y la franja se libera.
 
-El diagrama de secuencia completo, con los casos de falla, está en `docs/arquitectura.md`.
+La sección de Comunicación muestra este flujo como diagrama de secuencia, con los mensajes entre servicios.
 
 ### Cambios desde las entregas anteriores
 
@@ -196,7 +217,7 @@ Que dos conductores no tomen la misma franja es un problema de **exclusión mutu
 
 Las dos propiedades que pide el curso se cumplen:
 - **Seguridad:** nunca hay dos reservas en la sección crítica, es decir, nunca dos reservas solapadas.
-- **Pervivencia:** el lock se libera solo al terminar la transacción, aunque el proceso muera, y una transacción abortada se reintenta hasta 3 veces antes de responder `503`, así que nadie espera para siempre.
+- **Pervivencia:** el lock se libera solo al terminar la transacción, aunque el proceso muera, y una transacción abortada se intenta hasta 3 veces en total antes de responder `503`, así que nadie espera para siempre.
 
 El punto único de falla del servidor central es aceptable acá, porque si la base de Reservas no está, no hay reservas que proteger.
 
@@ -204,8 +225,8 @@ El punto único de falla del servidor central es aceptable acá, porque si la ba
 
 El sistema evita depender del orden temporal entre nodos:
 
-- **Una sola referencia de tiempo:** todas las horas se guardan en UTC, y el vencimiento de una reserva lo decide la base de Reservas comparando con su propio reloj (`now()`), no el reloj de cada réplica.
-- **Los relojes de las máquinas:** en el compose, todos los contenedores comparten el reloj del host. Con varias máquinas haría falta sincronizarlas con NTP.
+- **Todo en UTC:** todas las horas se guardan en UTC. La tarea que expira las reservas compara su plazo con la hora de la base de Reservas (`now()`), así que varias réplicas de esa tarea no discrepan entre sí.
+- **Los relojes de las máquinas:** el plazo de 10 minutos lo calcula Reservas con su reloj, y Pagos usa el suyo para rechazar el pago de una reserva vencida. En el compose todos los contenedores comparten el reloj del host, así que coinciden. Con varias máquinas haría falta sincronizarlas con NTP, y una diferencia de unos segundos igual queda cubierta: si se llega a cobrar una reserva que ya venció, Pagos la reembolsa.
 - **El orden de los eventos no se deduce de su hora.** Los eventos llevan su momento (`ocurridoEn`), pero ningún consumidor lo usa para ordenarlos, porque con relojes distintos esa hora no es confiable. En su lugar:
   - cada evento repetido se descarta por su `eventId`;
   - cada cambio de estado es condicional al estado actual;
@@ -225,7 +246,7 @@ Reservar y pagar ocurre en dos servicios con bases distintas, así que no hay un
 |---|---|
 | I. Código base | Un repositorio con una carpeta y una imagen por servicio; el mismo código se despliega en cualquier entorno |
 | II. Dependencias | Declaradas y con versión fija (`package-lock.json` y `requirements.txt`); las imágenes no usan nada de la máquina |
-| III. Configuración | Solo variables de entorno, con un `.env.example` por servicio. No hay secretos en el repositorio |
+| III. Configuración | Solo variables de entorno, declaradas en el compose. En el repositorio solo hay credenciales de desarrollo (por ejemplo, `app/app` en las bases); las claves de los JWT se generan al arrancar y no se versionan |
 | IV. Servicios de respaldo | PostgreSQL, RabbitMQ, Redis y Jaeger se ubican por URL; cambiarlos es cambiar una variable. Cocheras funciona sin Redis |
 | V. Construir, distribuir, ejecutar | Un `Dockerfile` por servicio (build), la imagen más la configuración del compose (release) y el contenedor (run) |
 | VI. Procesos | Sin estado en memoria entre requests: todo va a PostgreSQL, Redis o RabbitMQ |
@@ -235,5 +256,3 @@ Reservar y pagar ocurre en dos servicios con bases distintas, así que no hay un
 | X. Paridad desarrollo/producción | `docker compose up` levanta los mismos servicios de respaldo y versiones que se usarían en producción, sin sustitutos como SQLite |
 | XI. Logs | JSON a la salida estándar; el entorno los recolecta y los manda a Loki |
 | XII. Procesos de administración | **Parcial.** Las migraciones son SQL versionado y corren con el mismo código y configuración, pero al arrancar el servicio y no como un proceso aparte |
-
-El detalle por factor está en `docs/12-factor.md`.

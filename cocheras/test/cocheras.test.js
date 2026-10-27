@@ -299,6 +299,19 @@ describe('Cocheras contra PostGIS', { skip: !TEST_DB && 'Definir TEST_DATABASE_U
     assert.equal((await gql(consulta, { id: c.id }, CONDUCTOR)).data.cochera.direccionExacta, 'Av. Brasil 2500');
   });
 
+  test('direccionExacta: deja de verse cuando terminó la reserva', async () => {
+    const c = await crearCochera();
+    const consulta = 'query ($id: ID!) { cochera(id: $id) { direccionExacta } }';
+    const acceso = 'INSERT INTO acceso_direccion (reserva_id, cochera_id, conductor_id, hasta) VALUES ($1, $2, $3, $4)';
+
+    await pool.query(acceso, [randomUUID(), c.id, CONDUCTOR.id, new Date(Date.now() - 60_000)]);
+    assert.equal((await gql(consulta, { id: c.id }, CONDUCTOR)).data.cochera.direccionExacta, null);
+
+    // Una reserva vigente del mismo conductor en la misma cochera sí la muestra.
+    await pool.query(acceso, [randomUUID(), c.id, CONDUCTOR.id, new Date(Date.now() + 3_600_000)]);
+    assert.equal((await gql(consulta, { id: c.id }, CONDUCTOR)).data.cochera.direccionExacta, 'Av. Brasil 2500');
+  });
+
   test('ubicacion exacta: mismas reglas que la dirección', async () => {
     const c = await crearCochera();
     const consulta = 'query ($id: ID!) { cochera(id: $id) { ubicacion { lat lng } } }';

@@ -24,7 +24,7 @@ Los servicios no conocen a Loki ni a Grafana. Cada uno escribe sus logs en la sa
 | Pilar | Herramienta | Qué registra cada servicio |
 |---|---|---|
 | Logs | Alloy y Loki | Una línea JSON por evento, con `nivel`, `servicio`, `mensaje`, `traceId` y, cuando corresponde, `usuarioId`, `cocheraId` o `reservaId`. Nunca contraseñas, tokens ni datos de tarjeta |
-| Métricas | Prometheus | Requests y latencia por ruta (con los mismos nombres en todos los servicios, para compararlos en un mismo panel) y métricas de negocio propias |
+| Métricas | Prometheus | Requests y latencia por ruta (con el mismo formato de nombre y las mismas etiquetas en todos los servicios, para compararlos en un mismo panel) y métricas de negocio propias |
 | Trazas | OpenTelemetry y Jaeger | Un span por request, por consulta a la base, por llamada a otro servicio y por evento publicado o consumido |
 
 Grafana reúne los tres en un solo tablero, que abre como pantalla de inicio. Desde un log se salta a su traza en Jaeger, y desde una traza a los logs de todos los servicios con ese `traceId`.
@@ -66,11 +66,11 @@ La latencia p95 por servicio es la medida de **calidad de servicio** del sistema
 
 ## Alertas
 
-Prometheus evalúa 18 alertas (`infra/prometheus/alertas.yml`). Se agrupan en cuatro tipos:
+Prometheus evalúa 18 alertas, definidas en un archivo versionado junto con el código. Se agrupan en cuatro tipos:
 
 - **Algo se cayó:** un servicio deja de exponer métricas (`ServicioCaido`), el gateway no responde (`GatewayCaido`), Cocheras pierde la conexión con RabbitMQ o no llega a Reservas.
 - **Errores y lentitud:** más de 2 % de errores internos en un servicio, o la p95 por encima del límite (500 ms para la búsqueda y el login, 800 ms para crear una reserva).
-- **Mensajes que no avanzan:** eventos en la cola de mensajes fallidos (`EventosEnDLQ`), o un outbox que se acumula porque RabbitMQ no los recibe, aunque la API siga respondiendo bien.
+- **Mensajes que no avanzan:** eventos en la cola de mensajes fallidos (`EventosEnDLQ`), o eventos que se acumulan en el outbox porque RabbitMQ no los recibe, aunque la API siga respondiendo bien.
 - **Seguridad y negocio:** más de 30 logins fallidos en 5 minutos (posible fuerza bruta), un refresh token reutilizado (posible sesión robada), reembolsos con error o un exceso de reservas que expiran sin pagarse (señal de un problema con Pagos).
 
 ![Alertas en Prometheus: `EventosEnDLQ` disparada después de publicar un evento inválido, que terminó en la cola de mensajes fallidos](../capturas/cocheras-03-prometheus-alertas.png)
@@ -79,8 +79,8 @@ Prometheus evalúa 18 alertas (`infra/prometheus/alertas.yml`). Se agrupan en cu
 
 La observabilidad no quedó solo para la demo: encontró dos errores reales durante el desarrollo.
 
-1. **Errores 500 con reservas simultáneas.** Con 10 reservas a la vez sobre la misma franja, en algunas corridas 9 de las 10 respondían 500 en lugar de 409. Los logs de Reservas mostraron que PostgreSQL abortaba las transacciones por *deadlock* en la restricción de exclusión. Nunca hubo doble reserva, pero el usuario recibía un error del servidor en lugar de «franja ocupada». Se corrigió con un lock por cochera: después, 5 corridas de 15 reservas simultáneas dieron siempre una aceptada y 14 conflictos, sin ningún 500. La métrica `reservas_reintentos_transaccion_total` quedó para vigilarlo.
-2. **RabbitMQ no arrancaba desde cero.** Con un volumen nuevo, el broker fallaba al importar su configuración. El log del contenedor mostraba el motivo exacto, y se corrigió declarando el virtual host en `infra/rabbitmq/definitions.json`.
+1. **Errores 500 con reservas simultáneas.** En la prueba de punta a punta, con varias reservas a la vez sobre la misma franja, algunas respondían 500 en lugar de 409. Los logs de Reservas mostraron que PostgreSQL abortaba las transacciones por *deadlock* en la restricción de exclusión; al reproducirlo, pasaba en 34 de cada 600 intentos. Nunca hubo doble reserva, pero el usuario recibía un error del servidor en lugar de «franja ocupada». Se corrigió con un lock por cochera: después, 300 rondas de 10 reservas simultáneas y 60 de 40 terminaron siempre con una aceptada y ningún 500, y la demo con 20 conductores da 1 reserva y 19 conflictos. La métrica `reservas_reintentos_transaccion_total` quedó para vigilarlo.
+2. **RabbitMQ no arrancaba desde cero.** Con un volumen nuevo, el broker fallaba al importar su configuración. El log del contenedor mostraba el motivo exacto, y se corrigió declarando el virtual host en la configuración del broker.
 
 Además, la prueba de un evento inválido mostró el camino completo de un fallo: el mensaje terminó en la cola de mensajes fallidos y disparó la alerta `EventosEnDLQ`.
 
@@ -89,8 +89,8 @@ En la operación diaria, cada señal responde una pregunta distinta. Las **métr
 ![A la izquierda, los logs de una reserva en todos los servicios, filtrados por su `traceId`; con «Ver traza en Jaeger» se abre a la derecha la traza completa](../capturas/cocheras-04-loki-log-a-traza.png)
 
 De los desafíos que plantea el curso, dos se nos presentaron:
-- **El monitoreo de microservicios y contenedores,** que resolvimos haciendo que cada servicio emita lo mismo y con los mismos nombres. Por eso un panel compara la latencia de los cuatro.
-- **El volumen de datos,** que acotamos no registrando los health checks ni `/metrics`, a los que Docker y Prometheus llaman cada pocos segundos.
+- **El monitoreo de microservicios y contenedores,** que resolvimos haciendo que cada servicio emita lo mismo, con el mismo formato de nombres y etiquetas. Por eso un panel compara la latencia de los cuatro.
+- **El volumen de datos,** que acotamos no registrando los healthchecks ni `/metrics`, a los que Docker y Prometheus llaman cada pocos segundos.
 
 ## Límites
 
