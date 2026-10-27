@@ -120,8 +120,11 @@ Solo `pagos/src/pasarela.js`, que crea la orden y reembolsa. Las rutas, el webho
 **¿Cómo escala Pagos?**
 Es un servicio sin estado. El adaptador de Redis de Socket.IO hace que un aviso llegue al cliente aunque esté conectado a otra réplica, y el publicador del outbox usa `SKIP LOCKED` para que varias réplicas no se pisen. **Pero solo lo probamos con una réplica.**
 
+**¿Y si Redis se cae?**
+Si Redis no responde al arrancar, Pagos espera 5 segundos y arranca igual sin el adaptador. Con una sola réplica los avisos llegan igual. Antes se quedaba esperando a Redis para siempre, sin abrir el puerto; lo encontró Diego revisando el código, y hay un test que lo cubre.
+
 **¿Cómo lo probaron?**
-60 pruebas automáticas contra PostgreSQL real (pagos concurrentes, firma, webhook repetido y adulterado, eventos fuera de orden, outbox y WebSocket), y una prueba de punta a punta por el gateway con todos los casos de la tabla de `pagos.md`.
+61 pruebas automáticas contra PostgreSQL real (pagos concurrentes, firma, webhook repetido y adulterado, eventos fuera de orden, outbox y WebSocket, también con Redis caído), y una prueba de punta a punta por el gateway con todos los casos de la tabla de `pagos.md`.
 
 ## Límites (decilos antes de que pregunten)
 
