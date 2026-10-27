@@ -25,7 +25,7 @@ Entrega: **15/11/2026 23:59** (documento + zip o GitHub). Defensa oral la semana
 - [ ] Tecnologías y motivos (incluye la base de datos)
 - [x] Comunicación (base escrita en `contratos.md` y `arquitectura.md`; falta pasarla al documento): tipos, motivo y caso de uso
 - [ ] Producto: screenshots de las funcionalidades (**pendiente**: registro, cocheras, búsqueda y reserva, pago y avisos)
-- [ ] Observabilidad (base en `observabilidad.md`; faltan las capturas de Grafana y Jaeger)
+- [ ] Observabilidad (base en `observabilidad.md`; capturas de Reservas e infraestructura en `docs/capturas/`: Jaeger, Grafana, RabbitMQ y Prometheus; faltan las de Usuarios y Cocheras)
 - [ ] Conclusión
 
 ## Defensa
