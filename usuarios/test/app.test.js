@@ -120,6 +120,11 @@ describe('claves y métricas', () => {
     assert.equal(decodificado.payload.iss, 'parkin-usuarios');
   });
 
+  test('GET /metrics no responde a lo que llega por el gateway (X-Forwarded-For)', async () => {
+    const res = await api.pedir('/metrics', { headers: { 'X-Forwarded-For': '203.0.113.7' } });
+    assert.equal(res.status, 404);
+  });
+
   test('GET /metrics expone las métricas en formato Prometheus', async () => {
     const texto = await (await api.pedir('/metrics')).text();
     assert.match(texto, /usuarios_http_requests_total/);

@@ -25,7 +25,7 @@ Usuarios registra cuentas, autentica, emite los tokens de sesión y administra p
 | POST | `/auth/refresh` | Rota el refresh token y devuelve una sesión nueva |
 | POST | `/auth/logout` | Revoca ese refresh token |
 | POST | `/auth/logout-todos` | Revoca todas las sesiones de la cuenta |
-| GET | `/auth/verificar` | Uso interno del gateway: valida el JWT y devuelve la identidad en headers |
+| GET | `/auth/verificar` | Valida el JWT y devuelve la identidad en headers. Alternativa para el gateway; hoy no se usa (ver sección 5) |
 | GET / PATCH | `/users/me` | Perfil del usuario autenticado; actualiza nombre y teléfono |
 | POST | `/users/me/roles` | Suma un rol y devuelve un access token con los roles nuevos |
 | GET | `/users/{id}` | Perfil público mínimo (`id`, `nombre`) |
@@ -59,21 +59,28 @@ Las migraciones se aplican al arrancar. Toman un `pg_advisory_lock`, así que do
 ```mermaid
 sequenceDiagram
     participant C as Cliente
-    participant G as Gateway (NGINX)
-    participant U as Usuarios
-    participant R as Reservas / Cocheras
+    participant G as Gateway (NGINX + njs)
+    participant R as Reservas / Pagos / Cocheras
     C->>G: POST /api/reservas (Authorization: Bearer …)
-    G->>U: GET /auth/verificar (subrequest interna)
-    U-->>G: 204 + X-User-Id, X-User-Roles  |  401
-    G->>R: POST /reservas (X-User-Id, X-User-Roles)
-    R-->>C: 201 / 409 / …
+    Note over G: gateway/jwt.js verifica la firma RS256<br/>con la clave pública de Usuarios
+    alt token válido
+        G->>R: POST /reservas (X-User-Id, X-User-Roles)
+        R-->>C: 201 / 409 / …
+    else sin token o token inválido
+        G-->>C: 401
+    end
 ```
 
-El NGINX de código abierto no valida JWT por sí mismo (eso viene en NGINX Plus), así que el gateway usa `auth_request`: por cada request a `/api/reservas`, `/api/pagos` y `/graphql` le pregunta a Usuarios. Sin token responde `204` sin identidad (la búsqueda de cocheras es pública); con token inválido o vencido, `401`, y el front refresca la sesión. El gateway descarta siempre los `X-User-Id` y `X-User-Roles` que mande el cliente, así que nadie puede hacerse pasar por otro.
+Usuarios firma los tokens y el gateway los verifica **por su cuenta**, sin llamar a Usuarios en cada request. El NGINX de código abierto no valida JWT (eso viene en NGINX Plus), así que el gateway lo hace con un script njs (`gateway/jwt.js`) que verifica la firma con la clave pública (`infra/jwt/jwt_public.pem`, montada solo de lectura) y controla `exp`, `nbf` y el emisor `parkin-usuarios`. Solo acepta RS256, así que rechaza `alg: none` y el cambio de algoritmo. Ese script corre en una location interna que NGINX consulta con `auth_request`, pero la consulta no sale del gateway.
 
-**Costo y alternativa.** Cada request protegido suma una llamada interna a Usuarios (una verificación de firma, sin base de datos). La segunda entrega planteaba que el gateway verificara solo con la clave pública; eso requiere OpenResty (NGINX + Lua) y queda como mejora. Para no depender de esa llamada, Usuarios también publica la clave en JWKS.
+- `/api/reservas`, `/api/pagos` y el resto de `/api/usuarios` exigen token. Sin token, o con uno inválido o vencido, responden `401` y el front refresca la sesión.
+- En `/graphql` el token es opcional, porque buscar cocheras es público. Sin token la request sigue sin identidad; con un token inválido, `401`.
+- Si el token es válido, el gateway pasa la identidad en `X-User-Id` y `X-User-Roles` (por ejemplo `PROPIETARIO,CONDUCTOR`). Siempre pisa los que mande el cliente, así que nadie puede hacerse pasar por otro.
+- Si el gateway no puede leer la clave pública, falla cerrado: responde `503 AUTH_NO_DISPONIBLE` y no deja pasar nada.
 
-**Evidencia** (prueba de punta a punta contra el gateway): sin token, `401`; con `X-User-Id` falso y sin token, `401`; con token de conductor, `crearCochera` responde `FORBIDDEN` (los roles llegan a Cocheras); y **8 conductores reservando a la vez la misma franja: una reserva creada y 7 respuestas `409`**.
+**Por qué así y no consultando a Usuarios.** Antes de esta versión, el gateway usaba `auth_request` contra `GET /auth/verificar` de Usuarios, que hacía la misma verificación. Funcionaba, pero cada request protegido sumaba una llamada interna y, si Usuarios se caía, se caían también Reservas, Pagos y las mutaciones de Cocheras. Verificar con la clave pública en el gateway es lo que planteaba la segunda entrega: Usuarios es el único que firma, y verificar no necesita ningún secreto. `GET /auth/verificar` sigue existiendo como alternativa, con el mismo contrato de headers, pero el gateway no lo usa.
+
+**Evidencia** (prueba de punta a punta contra el gateway, hecha cuando validaba con `/auth/verificar`; el comportamiento hacia los servicios es el mismo): sin token, `401`; con `X-User-Id` falso y sin token, `401`; con token de conductor, `crearCochera` responde `FORBIDDEN` (los roles llegan a Cocheras); y **8 conductores reservando a la vez la misma franja: una reserva creada y 7 respuestas `409`**.
 
 ## 6. Seguridad
 
@@ -81,7 +88,7 @@ El NGINX de código abierto no valida JWT por sí mismo (eso viene en NGINX Plus
 - El login compara contra un hash ficticio cuando el email no existe: tarda lo mismo y no permite averiguar qué emails están registrados.
 - El gateway limita el login a 10 intentos por minuto por IP.
 - Las claves las genera el servicio `jwt-claves` del compose la primera vez que se levanta (si ya existen no las toca, para no invalidar las sesiones) y no se commitean (`*.pem` en `.gitignore`).
-- `/metrics` es interno: el gateway responde `404` en `/api/usuarios/metrics`.
+- `/metrics` es interno: lo que llega por el gateway trae `X-Forwarded-For` y Usuarios responde `404`; Prometheus lo lee directo por la red de Docker.
 
 ## 7. Observabilidad
 
@@ -96,7 +103,7 @@ El NGINX de código abierto no valida JWT por sí mismo (eso viene en NGINX Plus
 | `usuarios_registros_total` | Cuentas nuevas |
 | `usuarios_logins_total{resultado}` | `ok` o `fallido`; un pico de fallidos indica fuerza bruta |
 | `usuarios_refresh_total{resultado}` | `ok`, `gracia`, `invalido` o `reutilizado` (posible robo de sesión) |
-| `usuarios_verificaciones_total{resultado}` | Verificaciones del gateway: `ok`, `anonimo`, `invalido` |
+| `usuarios_verificaciones_total{resultado}` | Llamadas a `/auth/verificar`: `ok`, `anonimo`, `invalido` (hoy en cero, ver sección 5) |
 
 ## 8. Pruebas
 
@@ -104,5 +111,5 @@ El NGINX de código abierto no valida JWT por sí mismo (eso viene en NGINX Plus
 
 ## 9. Provisorio o pendiente
 
-- El gateway valida el JWT por su cuenta, con la clave pública y sin llamar a Usuarios (`gateway/jwt.js`); el equipo eligió esa opción. `GET /auth/verificar` queda en Usuarios con el mismo contrato (`X-User-Id`, `X-User-Roles`), pero el gateway no lo usa.
+- `GET /auth/verificar` no lo usa nadie desde que el gateway valida el JWT con njs (sección 5). Se mantiene como alternativa; si se decide no usarlo nunca, se puede borrar junto con su métrica `usuarios_verificaciones_total`.
 - `docs/contratos.md` §3 lista cinco endpoints; los demás de la sección 2 se proponen al contrato por PR.

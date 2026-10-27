@@ -44,6 +44,12 @@ loki.process "json" {
     expressions = { nivel = "nivel" }
   }
 
+  // El log de errores de NGINX (gateway) no puede ser JSON: "2026/10/22 21:15:18 [warn] 29#29: ...".
+  // Se le saca el nivel del texto para poder filtrarlo igual que los logs JSON.
+  stage.regex {
+    expression = `^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} \[(?P<nivel>[a-z]+)\]`
+  }
+
   stage.labels {
     values = { nivel = "" }
   }

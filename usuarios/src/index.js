@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { pool } from './db.js';
 import { logger } from './logger.js';
 import { migrar } from './migrar.js';
+import { apagarTelemetria } from './telemetria.js';
 
 await migrar();
 
@@ -15,6 +16,7 @@ function apagar(senal) {
   logger.info({ senal }, 'apagando');
   server.close(async () => {
     await pool.end();
+    await apagarTelemetria();
     process.exit(0);
   });
   setTimeout(() => process.exit(1), 10_000).unref();

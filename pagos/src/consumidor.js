@@ -1,5 +1,6 @@
 import amqp from 'amqplib';
 import { EventoInvalido } from './eventos.js';
+import { conSpan, SpanKind } from './trazas.js';
 
 // Declarada en infra/rabbitmq/definitions.json; los servicios no crean colas.
 const COLA = 'pagos.reserva-eventos';
@@ -24,7 +25,12 @@ export function crearConsumidor({ url, procesador, logger }) {
     let evento;
     try {
       evento = JSON.parse(mensaje.content.toString());
-      await procesador.procesar(evento);
+      // Span colgado del traceId que trae el evento: el procesamiento queda en la traza de Reservas.
+      await conSpan(
+        `procesar ${evento?.tipo ?? 'evento'}`,
+        { kind: SpanKind.CONSUMER, traceId: evento?.traceId, atributos: { 'messaging.destination.name': COLA, 'reserva.id': evento?.datos?.reservaId } },
+        () => procesador.procesar(evento),
+      );
       canal.ack(mensaje);
     } catch (err) {
       if (err instanceof SyntaxError || err instanceof EventoInvalido) {
