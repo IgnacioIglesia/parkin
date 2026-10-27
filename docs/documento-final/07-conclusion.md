@@ -9,7 +9,7 @@ El objetivo era resolver un problema concreto de sistemas distribuidos: que much
 - **Cuatro funcionalidades operativas y demostrables:** registro y autenticación; alta y gestión de cocheras; búsqueda y reserva por franja; pago con avisos en tiempo real.
 - **Cuatro formas de comunicación**, cada una elegida por su caso de uso: REST, GraphQL, mensajería con RabbitMQ y WebSocket.
 - **Persistencia** con una base PostgreSQL por servicio, y PostGIS para la búsqueda geográfica.
-- **Los doce factores de 12-Factor**, once completos y uno parcial.
+- **Los doce factores de 12-Factor**, uno de ellos (los procesos de administración) de forma parcial.
 - **Los tres pilares de la observabilidad**, unidos por un mismo identificador de traza.
 
 La garantía central se probó y no solo se diseñó. En la prueba con 20 conductores reservando la misma franja en el mismo instante, entra uno solo y los otros 19 reciben «franja ocupada». La garantía se sostiene aunque se caiga un servicio, se repita un mensaje o el pago llegue tarde.
@@ -24,13 +24,13 @@ La garantía central se probó y no solo se diseñó. En la prueba con 20 conduc
 
 **Lo que no se observa, no se puede arreglar.** Con cuatro servicios y un broker, un error sin trazas es casi imposible de ubicar. La observabilidad no quedó para la demo: encontró errores reales mientras desarrollábamos.
 
-**Los contratos escritos permiten trabajar en paralelo.** Cuatro personas, dos lenguajes y cuatro servicios se integraron porque los endpoints, los eventos y el esquema GraphQL estaban escritos antes de implementarlos (`docs/contratos.md`).
+**Los contratos escritos permiten trabajar en paralelo.** Cuatro personas, dos lenguajes y cuatro servicios se integraron porque los endpoints, los eventos y el esquema GraphQL estaban escritos antes de implementarlos.
 
 ## Problemas encontrados y cómo los resolvimos
 
 | Problema | Cómo apareció | Solución |
 |---|---|---|
-| Con reservas simultáneas, algunas respondían `500` en lugar de `409` | La prueba de punta a punta y los logs de Reservas mostraron *deadlocks* de PostgreSQL al insertar a la vez sobre la misma franja | Las altas de una misma cochera hacen fila con un lock por cochera, y una transacción abortada se reintenta. Después, 0 errores en 3000 intentos. Nunca hubo doble reserva, pero el error era incorrecto |
+| Con reservas simultáneas, algunas respondían `500` en lugar de `409` | La prueba de punta a punta y los logs de Reservas (ver Observabilidad) | Un lock por cochera, y reintento de la transacción abortada. Nunca hubo doble reserva, pero el error era incorrecto |
 | RabbitMQ no arrancaba en una máquina limpia | Al levantar el sistema desde cero con un volumen nuevo | Se declaró el virtual host en la configuración del broker |
 | El sistema no arrancaba en frío: el gateway y Pagos buscaban la clave pública antes de que existiera, y Docker creaba una carpeta en su lugar | Al probar en un clon limpio del repositorio | Un servicio genera las claves la primera vez, y los demás esperan a que termine |
 | La traza del pago se cortaba en el webhook, porque el aviso de la pasarela llega desde afuera y sin contexto | Al seguir una reserva en Jaeger | Pagos guarda el identificador de traza al crear el pago y cuelga de él el aviso y todo lo que sigue |
@@ -59,7 +59,7 @@ Los declaramos en cada sección; los principales son:
 
 ## Sobre el uso de inteligencia artificial
 
-La IA aceleró sobre todo la implementación, las pruebas y la documentación. El valor estuvo en usarla con un criterio claro: el contrato primero, la persona revisa y decide, y todo se verifica corriendo. Varias de las correcciones registradas en `docs/uso-ia.md` son casos en los que la IA propuso algo que parecía correcto y no lo era. Las decisiones de arquitectura y la elección entre alternativas fueron del equipo.
+La IA aceleró sobre todo la implementación, las pruebas y la documentación. El valor estuvo en usarla con un criterio claro: el contrato primero, la persona revisa y decide, y todo se verifica corriendo. Varias de las correcciones registradas en el anexo son casos en los que la IA propuso algo que parecía correcto y no lo era. Las decisiones de arquitectura y la elección entre alternativas fueron del equipo.
 
 ## Cierre
 
