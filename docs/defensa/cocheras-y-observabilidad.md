@@ -21,7 +21,7 @@ Guía para quien defiende esta parte: qué explicar, qué mostrar y qué pregunt
 | Una traza completa | La URL de Jaeger que imprime `scripts/demo.mjs` al final: Reservas consulta a Cocheras dentro de la misma traza, y la confirmación por evento aparece colgada de ella |
 | Seguir un pedido en todos los servicios | La consulta de Loki que imprime el mismo script: `{servicio=~".+"} \|= "<traceId>"` |
 | Las alertas | `http://localhost:9090/alerts` |
-| Degradación controlada | `docker compose stop redis`, buscar (funciona, sin caché), `docker compose start redis` |
+| Degradación controlada | `docker compose stop reservas`, buscar en el mapa (funciona, sin el filtro de ocupación), `docker compose start reservas`. No apagar Redis en vivo: Pagos lo necesita para arrancar si se reinicia |
 
 Antes de la defensa: `docker compose ps` con todo `healthy`, `node scripts/sembrar-cocheras.mjs` para que la búsqueda tenga datos, y una corrida de `CONDUCTORES=20 node scripts/demo.mjs` para que el tablero tenga tráfico.
 
@@ -39,7 +39,10 @@ Tres. Una consulta muy anidada puede ser cara: se rechaza si pasa de profundidad
 Si una búsqueda devuelve 50 cocheras y se pide la disponibilidad de cada una, un resolver ingenuo hace 1 consulta para las cocheras y 50 más, una por cada una. DataLoader junta todos los pedidos que se hacen dentro de un mismo request y los resuelve en una sola consulta. Hay un test que lo verifica contando las consultas: 5 cocheras, 1 sola consulta de franjas.
 
 **¿Cómo protegen la dirección del propietario?**
-Con dos ubicaciones. La aproximada se calcula una vez al crear la cochera, a 100-300 m de la real, y queda fija. La exacta llega `null` para cualquiera que no sea el dueño o el conductor con reserva confirmada.
+Con dos ubicaciones. La aproximada se calcula al crear la cochera, a 100-300 m de la real, y queda fija; solo se recalcula si el dueño mueve la cochera. La exacta llega `null` para cualquiera que no sea el dueño o el conductor con reserva confirmada, y vuelve a llegar `null` cuando su franja terminó.
+
+**¿Qué pasa con la dirección cuando la reserva termina?**
+Deja de verse. Al recibir `reserva.confirmada`, Cocheras guarda también el fin de la franja (`hasta`, que viene en el evento), y la consulta compara esa hora con la de la base. No hace falta un evento de fin: el acceso vence solo. Hay tests para los dos casos, vigente y terminada.
 
 **¿Por qué la ubicación aproximada es fija y no cambia en cada consulta?**
 Porque si cambiara, promediando muchas búsquedas se podría reconstruir el punto real. Por lo mismo, la búsqueda filtra y ordena por la aproximada: si filtrara por la real, alguien podría ir achicando el radio y triangular la casa.
@@ -51,10 +54,10 @@ Escucha `reserva.confirmada` por RabbitMQ y guarda el acceso; con `reserva.cance
 La búsqueda es «cocheras a menos de N metros de este punto, ordenadas por distancia». PostGIS lo resuelve con `ST_DWithin` y un índice GIST, sin recorrer toda la tabla. `GEOGRAPHY` calcula en metros sobre el elipsoide terrestre, sin tener que elegir una proyección.
 
 **La caché, ¿no muestra datos viejos?**
-Sí, hasta 30 segundos: es consistencia eventual, elegida a propósito. Puede mostrar como libre una cochera que alguien acaba de reservar, pero el intento de reservarla recibe `409` por la restricción de Reservas. Nunca hay doble reserva, solo una pantalla un poco vieja. Ante un cambio en una cochera (alta, edición, disponibilidad, baja o un evento de reserva) se incrementa un número de versión que forma parte de cada clave, y así se invalidan todas las búsquedas guardadas de una vez.
+Sí, hasta 30 segundos: es consistencia eventual, elegida a propósito. Puede mostrar como libre una cochera que alguien acaba de reservar, pero el intento de reservarla recibe `409` por la restricción de Reservas. Nunca hay doble reserva, solo una pantalla un poco vieja. Ante un cambio en una cochera (alta, edición, disponibilidad o baja) o una reserva confirmada o cancelada, se incrementa un número de versión que forma parte de cada clave, y así se invalidan todas las búsquedas guardadas de una vez.
 
 **¿Qué pasa si cae Redis? ¿Y si cae Reservas?**
-Sin Redis, la búsqueda va directo a la base: más lenta, pero funciona. Sin Reservas, la búsqueda devuelve las cocheras sin el filtro de ocupación en vez de fallar: la búsqueda es orientativa, y Reservas igual frena la doble reserva cuando vuelve. Lo que sí se rechaza sin Reservas es la baja de una cochera, porque no se puede saber si tiene reservas activas: ante la duda, no se borra.
+Sin Redis, la búsqueda va directo a la base: más lenta, pero funciona (Pagos, en cambio, no arranca sin Redis, porque lo usa para los avisos). Sin Reservas, la búsqueda devuelve las cocheras sin el filtro de ocupación en vez de fallar: la búsqueda es orientativa, y Reservas igual frena la doble reserva cuando vuelve. Lo que sí se rechaza sin Reservas es la baja de una cochera, porque no se puede saber si tiene reservas activas: ante la duda, no se borra.
 
 **¿Y si cae RabbitMQ?**
 El consumidor reintenta cada 3 segundos y `/ready` responde `503` mientras tanto. La búsqueda y la gestión de cocheras siguen funcionando; lo único que se demora es habilitar la dirección exacta, que llega cuando vuelve el broker, porque los eventos esperan en la cola durable.
@@ -92,7 +95,7 @@ Pull: Prometheus lee `GET /metrics` de cada servicio cada 15 segundos. Los servi
 El promedio esconde a los usuarios que esperan mucho. La p95 dice cuánto espera el 95 % de los pedidos, y es la medida de calidad de servicio que usan las alertas: 500 ms para buscar y para el login, 800 ms para crear una reserva.
 
 **¿Qué encontró la observabilidad?**
-Dos errores reales. Con reservas simultáneas, a veces la mayoría respondía `500` en lugar de `409`: los logs de Reservas mostraron que PostgreSQL abortaba transacciones por *deadlock*. Nunca hubo doble reserva, pero el error era incorrecto. Se corrigió con un lock por cochera: después, 5 corridas de 15 reservas simultáneas dieron siempre 1 aceptada y 14 conflictos. El otro: RabbitMQ no arrancaba con un volumen nuevo, y el log mostró el motivo exacto.
+Dos errores reales. Con reservas simultáneas, algunas respondían `500` en lugar de `409` (al reproducirlo, 34 de cada 600 intentos): los logs de Reservas mostraron que PostgreSQL abortaba transacciones por *deadlock*. Nunca hubo doble reserva, pero el error era incorrecto. Se corrigió con un lock por cochera: después, 300 rondas de 10 y 60 de 40 sin ningún `500`, y la demo con 20 conductores da 1 reserva y 19 conflictos. El otro: RabbitMQ no arrancaba con un volumen nuevo, y el log mostró el motivo exacto.
 
 **¿Cómo se suma un servicio nuevo a la observabilidad?**
 Logs JSON a stdout, `GET /metrics` con los mismos nombres de métricas y el SDK de OpenTelemetry con dos variables de entorno. No hay que tocar Loki ni Grafana: los paneles de requests y latencia lo muestran solo. Está escrito en `docs/observabilidad.md`.
@@ -105,5 +108,5 @@ No del todo. Grafana abre sin login, la retención es la de fábrica y las alert
 - **La búsqueda no devuelve nada:** `node scripts/sembrar-cocheras.mjs`, y buscar en uno de los barrios que siembra.
 - **El tablero está vacío:** `CONDUCTORES=20 node scripts/demo.mjs` y esperar 15 a 30 segundos a que Prometheus lea las métricas.
 - **Jaeger no muestra la traza:** buscar por servicio `cocheras` o `reservas` en los últimos 15 minutos; el gateway no aparece como servicio.
-- **Redis quedó apagado después de la demo de degradación:** `docker compose start redis`.
+- **Reservas quedó apagado después de la demo de degradación:** `docker compose start reservas`.
 - **Falla algo y no hay tiempo de arreglarlo:** mostrar las capturas de `docs/capturas/` (`cocheras-*`, `infra-01`, `reservas-01`, `pago-06`) y explicar con el diagrama de `docs/arquitectura.md`.
