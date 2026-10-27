@@ -23,7 +23,7 @@ Entrega: **15/11/2026 23:59** (documento + zip o GitHub). Defensa oral la semana
 - [ ] Introducción: idea, relevancia, uso de IA (hay un borrador en `docs/documento-final/01-introduccion.md`)
 - [x] Diseño: características de SD, arquitectura + diagrama, 12F
 - [ ] Tecnologías y motivos (incluye la base de datos)
-- [x] Comunicación (base escrita en `contratos.md` y `arquitectura.md`; falta pasarla al documento): tipos, motivo y caso de uso
+- [x] Comunicación: tipos, motivo y caso de uso → [`documento-final/04-comunicacion.md`](documento-final/04-comunicacion.md)
 - [ ] Producto: screenshots de las funcionalidades (**pendiente**: registro, cocheras, búsqueda y reserva, pago y avisos)
 - [ ] Observabilidad (base en `observabilidad.md`; capturas de Reservas e infraestructura en `docs/capturas/`: Jaeger, Grafana, RabbitMQ y Prometheus; faltan las de Usuarios y Cocheras)
 - [ ] Conclusión
@@ -31,7 +31,7 @@ Entrega: **15/11/2026 23:59** (documento + zip o GitHub). Defensa oral la semana
 ## Defensa
 
 - [ ] Demo ensayada con `docker compose up` desde cero (el arranque en frío se verificó el 26/10; falta el ensayo completo)
-- [ ] Guion con el reparto de tiempos (hay una guía para Reservas e infraestructura en `docs/defensa/`; faltan las de los demás)
+- [x] Guion con el reparto de tiempos → [`defensa/guion-general.md`](defensa/guion-general.md), con una guía por integrante en `docs/defensa/`
 - [ ] Cada integrante preparó preguntas probables de su servicio
 - [ ] Plan B por si falla el túnel: sistema local en `http://localhost:8081`, y capturas o un video de respaldo
 - [ ] Datos de demo cargados antes (`node scripts/sembrar-cocheras.mjs`)
