@@ -2,7 +2,8 @@
 // Arma el documento final en PDF a partir de las secciones de docs/documento-final/:
 //   1. Junta los archivos NN-*.md en orden y saca la nota de "Borrador" del principio de cada uno.
 //   2. Si falta una sección de las que pide la letra, deja una página que avisa que está pendiente.
-//   3. Agrega la portada (con el formato de la preentrega), el índice y, como anexo, docs/uso-ia.md.
+//   3. Agrega la portada (con el formato de la preentrega), el índice y los anexos: los archivos
+//      09-*.md en adelante, o docs/uso-ia.md completo si no hay ninguno.
 //   4. Genera un HTML que dibuja el Markdown y los diagramas Mermaid, y lo imprime con Chrome.
 //
 // Uso:
@@ -46,10 +47,15 @@ function secciones() {
     }
     return sinNotaDeBorrador(readFileSync(join(SECCIONES, archivo), 'utf8'));
   });
-  return { textos, pendientes };
+  // Lo que viene después de las secciones de la letra (09-anexo-..., etc.) va como anexo.
+  const anexos = archivos
+    .filter((a) => !ESPERADAS.some(([numero]) => a.startsWith(`${numero}-`)))
+    .map((a) => sinNotaDeBorrador(readFileSync(join(SECCIONES, a), 'utf8')));
+  return { textos, pendientes, anexos };
 }
 
-// docs/uso-ia.md va como anexo: es el registro de decisiones que pide el punto 9 de la letra.
+// Si no hay un anexo propio del documento, va docs/uso-ia.md completo: es el registro de
+// decisiones que pide el punto 9 de la letra.
 function anexoUsoIa() {
   const md = readFileSync(join(RAIZ, 'docs', 'uso-ia.md'), 'utf8')
     .replace(/^# .+\n/, '# Anexo: registro del uso de inteligencia artificial\n')
@@ -207,8 +213,8 @@ if (!existsSync(CHROME)) {
   process.exit(1);
 }
 
-const { textos, pendientes } = secciones();
-textos.push(anexoUsoIa());
+const { textos, pendientes, anexos } = secciones();
+textos.push(...(anexos.length ? anexos : [anexoUsoIa()]));
 mkdirSync(SALIDA, { recursive: true });
 const archivoHtml = join(SALIDA, 'parkin-documento-final.html');
 const archivoPdf = join(SALIDA, 'parkin-documento-final.pdf');
