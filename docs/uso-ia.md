@@ -4,7 +4,22 @@ La letra exige detallar cómo se usó la IA y enumerar las decisiones concretas 
 
 ## Metodología
 
-_Qué herramientas usamos y para qué tipo de tareas._
+Herramienta: **Claude Code** (modelo de Anthropic), usada por los cuatro integrantes desde la terminal, sobre su copia del repositorio.
+
+**Cómo trabajamos con ella**
+
+1. **Primero el contrato, después el código.** `docs/contratos.md` fija los endpoints, los eventos y el esquema GraphQL antes de implementar; la IA implementa contra ese contrato, y los cambios al contrato se discuten en el equipo.
+2. **La IA escribe, la persona revisa y publica.** La IA crea código, pruebas y documentos; los commits, los push y los PRs los hace cada persona con su usuario. Ningún commit lleva una atribución a la IA: lo controla un check de GitHub Actions (`.github/workflows/sin-atribucion-claude.yml`) que falla el PR si aparece.
+3. **Se verifica corriendo, no leyendo.** Cada pieza se probó con pruebas automáticas contra bases de datos y un broker reales, y con recorridos de punta a punta por el gateway. Cuando una prueba falló, se corrigió la causa (por ejemplo, un deadlock que solo aparecía con PostgreSQL real, o un arranque en frío que fallaba en un clon limpio).
+4. **Una rama por tarea.** Cada cambio entra a `main` por un PR, con el check de atribución en verde, y se mergea con *squash*.
+
+**Para qué tipo de tareas la usamos:** implementar servicios sobre un contrato, escribir pruebas, reproducir y diagnosticar errores, revisar seguridad (por ejemplo, intentar romper la validación del JWT), armar la infraestructura (Docker, observabilidad), escribir scripts de operación y mantener la documentación al día con lo implementado.
+
+**Qué decidimos nosotros y no la IA:** el reparto de servicios y la arquitectura, el stack, y las decisiones entre alternativas (por ejemplo, validar el JWT en el gateway con una clave pública en lugar de consultar a Usuarios en cada request, o cómo resolver los pagos tardíos). En esos casos la IA presentó las opciones con sus costos y el equipo eligió.
+
+**Límites que conocemos:** la IA puede producir código que parece correcto y no lo es. Por eso cada decisión de la tabla de abajo indica qué se verificó y qué se cambió. Lo que no se probó está declarado como límite en los documentos de cada servicio (`docs/secciones/`).
+
+_Borrador: cada integrante puede sumar cómo la usó y qué corrigió._
 
 ## Registro de decisiones
 
@@ -28,6 +43,16 @@ _Qué herramientas usamos y para qué tipo de tareas._
 | 2026-10-21 | Martina | Claude Code | `docker compose up` desde cero: servicio `jwt-claves` que genera las claves si faltan (sin pisar las existentes); pago alineado al contrato de Pagos (Idempotency-Key, reintento ante RESERVA_DESCONOCIDA, checkout en otra pestaña) y reconexión del WebSocket con token vencido | Se probó levantar sin claves, el reuso de claves existentes y el pago con respuestas simuladas de Pagos |
 | 2026-10-21 | Diego | Claude Code | Completar `12-factor.md` y `caracteristicas-sd.md` con lo implementado; script `scripts/demo.mjs` para la defensa; revisión del PR #19 del gateway | Se aceptó. La demo, corrida contra el gateway del PR #19, confirmó el flujo completo; la revisión detectó que si falta la clave pública Docker crea una carpeta en su lugar |
 | 2026-10-21 | Diego | Claude Code | Campo `ubicacion` (punto exacto) en el tipo `Cochera`, a pedido de Martina para editar sin volver a marcar el mapa | Se aceptó con las mismas reglas de visibilidad que `direccionExacta` (dueño o conductor con reserva confirmada) |
+| 2026-10-22 | Ignacio | Claude Code | Script `scripts/sembrar-cocheras.mjs` para cargar cocheras de demo en los barrios del buscador | Se adoptó; se probó contra el sistema real: crea sin duplicar, amplía, borra y la búsqueda de la web las encuentra por barrio y horario |
+| 2026-10-21 | Ignacio | Claude Code | Servicio de Reservas (FastAPI): restricción de exclusión `gist` para que no haya dobles reservas, `Idempotency-Key`, control optimista, expiración a los 10 minutos y finalización | Se adoptó. Decisión: la regla vive en la base de datos y no en la memoria de una réplica. Se probó con PostgreSQL real, con una prueba de 100 clientes simultáneos (una reserva, 99 conflictos), y se comprobó que sin la restricción la misma prueba falla |
+| 2026-10-21 | Ignacio | Claude Code | Mensajería de Reservas: outbox transaccional, publisher confirms, consumo idempotente, Dead Letter Queue | Se adoptó el outbox para no perder eventos si RabbitMQ cae, en lugar de publicar directo después de guardar. Se probó con RabbitMQ real: ahí se vio que `definitions.json` no creaba el vhost ni el usuario (lo avisó Diego) y se corrigió |
+| 2026-10-21 | Ignacio | Claude Code | Dockerfiles, compose y gateway; dónde validar el JWT: en nginx con la clave pública, o con `auth_request` a Usuarios | Se eligió nginx (njs): no llama a Usuarios en cada request, como pide la segunda entrega. Se probó con 40 verificaciones, incluidos tokens vencidos, falsificados, `alg: none` y cambio de algoritmo; el equipo votó esa opción |
+| 2026-10-21 | Ignacio | Claude Code | Observabilidad de Reservas: logs JSON, métricas de Prometheus con alertas y trazas OpenTelemetry a Jaeger | Se adoptó. Verificado con Cocheras real: una sola traza con los dos servicios encadenados |
+| 2026-10-21 | Ignacio | Claude Code | Error reportado por Diego: respuestas 500 por deadlock con reservas simultáneas | Se reprodujo con PostgreSQL 16 (34 de cada 600 intentos). Solo reintentar no alcanzaba (18 de 250 seguían fallando), así que se agregó un lock por cochera; después, 0 errores en 3000 intentos. Se cambió el test para que fuera sensible al problema |
+| 2026-10-22 | Ignacio | Claude Code | Arranque en frío desde un clon limpio | Se encontró que `docker compose up` fallaba (gateway y pagos montaban la clave sin esperar a `jwt-claves`) y se corrigió. Se agregó reinicio automático a las bases y a RabbitMQ después de que un reinicio de Docker dejara servicios caídos |
+| 2026-10-22 | Ignacio | Claude Code | Demo remoto: script con túnel de Cloudflare y ruta `/pasarela/` en el gateway | Se adoptó; verificado con un túnel real (23 verificaciones). Decisión de seguridad: publicar solo la página de pago de la pasarela de prueba, no `/ordenes` |
+| 2026-10-22 | Ignacio | Claude Code | Actualizar arquitectura, características de SD y secciones con lo implementado | Se adoptó; se corrigieron líneas que figuraban como pendientes y ya estaban resueltas |
+| 2026-10-26 | Ignacio | Claude Code | Cierre: checklist, guía de entrega, guion de defensa de Reservas e introducción (borrador) | Borrador para revisar entre todos; se retiró el README de la raíz a pedido |
 | 2026-10-22 | Romina | Claude Code | Corrección de `docs/secciones/usuarios.md`: el diagrama y el texto describían la validación del JWT con `auth_request` contra `/auth/verificar`, pero el gateway valida con njs y la clave pública (`gateway/jwt.js`) | Se aceptó; se verificó contra `gateway/nginx.conf` y `gateway/jwt.js` en `main` |
 | 2026-10-22 | Romina | Claude Code | Secciones del documento final de Pagos y Notificaciones (`docs/secciones/pagos.md`) y del Gateway (`docs/secciones/gateway.md`), escritas a partir del código en `main` | Se verificó cada afirmación: 61 de 61 tests de Pagos y una prueba de punta a punta por el gateway (32 casos: JWT, roles, CORS, rate limiting, saga, reembolso, WebSocket y concurrencia). Se anotaron como pendientes los logs del gateway en texto y la falta de trazas OpenTelemetry en Pagos |
 | 2026-10-22 | Diego | Claude Code | Sección de Cocheras para el documento final; demo con pago real por Pagos y la pasarela simulada; prueba del sistema completo desde cero | Se aceptó. La prueba confirmó el arreglo del deadlock (5 corridas de 15 reservas simultáneas: siempre 1 × 201 y 14 × 409) |
