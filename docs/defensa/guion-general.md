@@ -8,7 +8,9 @@ Reparto de las diapositivas, qué dice cada uno y qué demos se muestran. El det
 
 Para repasar los conceptos del curso aplicados a parkIN: `temas-del-curso.md`.
 
-**Duración supuesta: 20 minutos de presentación más preguntas.** La letra no la fija. Si los docentes confirman otra duración, se recorta primero la demo opcional (la 5) y después las diapositivas 13 y 15.
+**Duración supuesta: 20 minutos de presentación más preguntas.** La letra no la fija. Las diapositivas suman 17 minutos y la demo 3 (la demo 5 es opcional y solo va si sobra tiempo). Si los docentes confirman menos tiempo, se recortan primero las diapositivas 13 y 15.
+
+**Partes que cada uno defiende sin haberlas hecho.** Romina presenta la saga, que también involucra a Reservas (Ignacio), y la comunicación, que incluye el GraphQL de Cocheras (Diego). Martina presenta la verificación del JWT en el gateway. En el ensayo, cada uno repasa esas partes con quien las hizo.
 
 ## Reparto
 
@@ -27,8 +29,8 @@ Para repasar los conceptos del curso aplicados a parkIN: `temas-del-curso.md`.
 | 11 | La saga de reserva y pago | Romina | 1:30 |
 | 12 | Pagos: no cobrar dos veces | Romina | 1:00 |
 | 13 | Observabilidad | Diego | 1:00 |
-| 14 | Demo en vivo | Martina, Ignacio y Diego | 4:00 |
-| 15 | 12-Factor, Docker y uso de IA | Ignacio | 0:45 |
+| 14 | Demo en vivo | Martina, Ignacio y Diego (Romina, si sobra tiempo) | 3:00 |
+| 15 | 12-Factor y uso de IA | Ignacio | 0:45 |
 | 16 | Conclusión y trabajo futuro | Romina | 0:45 |
 | 17 | Preguntas | todos | — |
 
@@ -58,27 +60,27 @@ Tiempo por persona: Ignacio 5:45, Diego 4:00 más la demo, Romina 4:45, Martina 
 - **REST** con Usuarios, Reservas y Pagos: operaciones simples que se monitorean por código HTTP.
 - **GraphQL** con Cocheras: cada pantalla pide exactamente sus campos.
 - **RabbitMQ** entre Reservas, Pagos y Cocheras: desacoplamiento temporal; si un servicio cae, los mensajes esperan.
-- **WebSocket** de Pagos a la web: el servidor empuja la confirmación, sin polling.
+- **WebSocket** de Pagos a la web: el servidor empuja la confirmación apenas ocurre, sin esperar a que el cliente pregunte. La pantalla igual consulta la reserva cada 5 segundos como respaldo.
 - **La idea a transmitir:** síncrono cuando el usuario necesita la respuesta ya (el precio para reservar), y asíncrono cuando no (confirmar el pago).
 
 ### 7 y 8. Martina: Usuarios y la web
 
-- **El JWT:** Usuarios es el único que conoce contraseñas y firma tokens: JWT RS256 de 15 minutos más refresh de un solo uso. Si se reutiliza un refresh, se asume robo y se cierran todas las sesiones.
+- **El JWT:** Usuarios es el único que conoce contraseñas y firma tokens: JWT RS256 de 15 minutos más refresh de un solo uso. Si se reutiliza un refresh pasados 30 segundos de gracia, se asume robo y se cierran todas las sesiones.
 - **El gateway** verifica el JWT con la clave pública, sin preguntarle a Usuarios en cada request.
-- **La web** es el único cliente y usa los cuatro mecanismos de comunicación.
+- **La web** es el único cliente y usa tres de los cuatro mecanismos: REST, GraphQL y WebSocket. RabbitMQ queda entre servicios.
 - **La web hace su parte de la consistencia:** `Idempotency-Key` en cada reserva y pago, así un doble clic no crea dos.
 
 ### 9. Diego: Cocheras
 
 - GraphQL, con profundidad máxima 5 y DataLoader contra el problema N+1.
 - Búsqueda geográfica con PostGIS y caché de 30 segundos en Redis, invalidada por versión.
-- **Confidencialidad:** todos ven una ubicación aproximada, fija, a 100-300 m de la real, y la búsqueda filtra por ella. La dirección exacta solo la ven el dueño y quien tiene la reserva confirmada.
+- **Confidencialidad:** todos ven una ubicación aproximada, fija, a 100-300 m de la real, y la búsqueda filtra por ella. La dirección exacta solo la ven el dueño y quien tiene la reserva confirmada, hasta que termina su franja.
 
 ### 10. Ignacio: Reservas
 
 - **La regla vive en la base**, el único lugar que comparten todas las réplicas: una restricción de exclusión de PostgreSQL rechaza dos reservas solapadas, aunque lleguen en el mismo instante.
 - **El lock por cochera** evita *deadlocks* entre inserciones simultáneas. Es exclusión mutua con servidor central: la base es el coordinador.
-- **Probado:** 100 clientes a la vez sobre la misma franja dan 1 reserva y 99 conflictos.
+- **Probado:** 300 rondas de 10 reservas simultáneas y 60 de 40, siempre con una sola aceptada; en la demo, 20 conductores dan 1 reserva y 19 conflictos.
 
 ### 11 y 12. Romina: saga y Pagos
 
@@ -105,7 +107,7 @@ Tiempo por persona: Ignacio 5:45, Diego 4:00 más la demo, Romina 4:45, Martina 
   - una pasarela real;
   - una política de cancelación con plazos.
 
-## Demos (diapositiva 14, 4 minutos)
+## Demos (diapositiva 14, 3 minutos)
 
 Van en este orden, porque cada una se apoya en la anterior:
 

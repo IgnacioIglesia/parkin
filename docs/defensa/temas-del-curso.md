@@ -80,7 +80,7 @@ No formalmente. Lo que sí tenemos es lo que baja el MTTR: reinicio automático 
 ### Seguridad
 
 Tiene cuatro aspectos:
-- **Confidencialidad:** la ubicación aproximada, y la dirección exacta solo para las partes de la reserva.
+- **Confidencialidad:** la ubicación aproximada, y la dirección exacta solo para las partes de la reserva y hasta que termina la franja.
 - **Integridad:** el precio sale del servidor, los cambios de estado son condicionales y el webhook va firmado con HMAC.
 - **Autenticación:** JWT RS256 y refresh de un solo uso.
 - **Autorización:** roles, y que solo el dueño toque su cochera.
@@ -136,7 +136,7 @@ Para la franja nos importa que el resultado sea equivalente a una ejecución en 
 |---|---|---|
 | I. Código base | Uno por aplicación, muchos despliegues | Un repositorio, con una carpeta y una imagen por servicio |
 | II. Dependencias | Declararlas y aislarlas | `package-lock.json` y `requirements.txt` con versión fija; nada instalado en la máquina |
-| III. Configuración | En variables de entorno, no en el código | `DATABASE_URL`, `RABBITMQ_URL`, `REDIS_URL`, etc., con un `.env.example` por servicio |
+| III. Configuración | En variables de entorno, no en el código | `DATABASE_URL`, `RABBITMQ_URL`, `REDIS_URL`, etc., declaradas en el compose (hay `.env.example` en Cocheras, Reservas y la web). En el repo solo hay credenciales de desarrollo |
 | IV. Servicios de respaldo | Recursos conectables, intercambiables sin cambiar código | PostgreSQL, RabbitMQ, Redis y Jaeger por URL |
 | V. Construir, distribuir, ejecutar | Etapas separadas | Dockerfile (build), imagen más compose (release), contenedor (run) |
 | VI. Procesos | Sin estado, *share-nothing* | El estado va a PostgreSQL, Redis o RabbitMQ |
@@ -237,7 +237,7 @@ Porque acopla los esquemas: un cambio en una tabla rompe a otro servicio, y una 
 | 502 | El gateway no llega al servicio |
 | 503 y `Retry-After` | Dependencia caída, o reintentos de transacción agotados en Reservas |
 | Degradación | Si Reservas no responde, la búsqueda devuelve resultados sin filtrar en vez de fallar |
-| Reintentos | La pasarela reintenta el webhook 4 veces con espera creciente (*backoff*); las transacciones abortadas se reintentan hasta 3 veces |
+| Reintentos | La pasarela manda el webhook hasta 4 veces, con espera creciente (*backoff*: 400, 800 y 1600 ms); una transacción abortada se intenta hasta 3 veces en total |
 
 **«¿Por qué `POST /reservas` necesita `Idempotency-Key` y `GET` no?»**
 GET es idempotente por definición: repetirlo no cambia nada. POST no lo es: si la respuesta se pierde y el cliente reintenta, sin la clave se crearían dos reservas. Con la clave, el segundo intento devuelve la reserva ya creada.
@@ -251,7 +251,7 @@ GET es idempotente por definición: repetirlo no cambia nada. POST no lo es: si 
 | El cliente define la forma de la respuesta | El mapa pide 5 campos; la ficha pide horarios, fotos y dirección |
 | Un solo endpoint, por POST | `POST /graphql` en Cocheras |
 | Schema, Query, Mutation | `buscarCocheras`, `cochera` y `misCocheras`; `crearCochera`, `actualizarCochera`, `definirDisponibilidad` y `eliminarCochera` |
-| Problema N+1 y DataLoader | 50 cocheras con su disponibilidad: 1 consulta en lugar de 50. Hay un test que cuenta las consultas |
+| Problema N+1 y DataLoader | Sin DataLoader, 50 cocheras con su disponibilidad serían 1 consulta más 50; con él, 1 más 1. Hay un test que lo verifica contando las consultas (con 5 cocheras) |
 | Errores con HTTP 200 | Por eso se mide cada operación con su resultado (`ok`, `error_cliente`, `error_interno`) y hay una alerta |
 | Queries maliciosas | Profundidad máxima 5 |
 | Difícil de cachear por HTTP | La caché se hace en el servidor, en Redis, con los argumentos de la búsqueda como clave |
@@ -291,7 +291,7 @@ Reservas y Pagos siguen funcionando: los eventos quedan en su tabla outbox y sal
 | Alternativas: polling, long polling, SSE | Solo con polling, el aviso tarda lo que tarde la próxima consulta y cada pestaña carga al servidor. Usamos WebSocket para el aviso inmediato y dejamos una consulta cada 5 s como respaldo mientras la reserva espera el pago. SSE alcanzaría para avisos de un solo sentido, pero Socket.IO trae reconexión y salas por usuario |
 | Handshake (`Upgrade`, 101 Switching Protocols) | Lo hace Socket.IO a través del gateway, que deja pasar el `Upgrade` |
 | Heartbeat (ping/pong) y reconexión | Socket.IO los maneja solo |
-| Conexión con estado y escalado horizontal difícil | **Adaptador de Redis** (el Pub/Sub compartido de la clase): un aviso llega aunque el cliente esté conectado a otra réplica de Pagos |
+| Conexión con estado y escalado horizontal difícil | **Adaptador de Redis** (el Pub/Sub compartido de la clase): está pensado para que un aviso llegue aunque el cliente esté conectado a otra réplica de Pagos. No lo probamos con más de una réplica |
 | Autenticación | El JWT va en el handshake (`auth.token`) y se verifica al conectar |
 
 **«¿Y si el aviso por WebSocket se pierde?»**
@@ -305,12 +305,12 @@ No se pierde información: el aviso es un servicio de «mejor esfuerzo». La fue
 |---|---|
 | Exclusión mutua distribuida | Reservar una franja es la sección crítica |
 | Algoritmos: servidor central, anillo, Ricart y Agrawala | **Servidor central**: la base de Reservas coordina con un lock por cochera más la restricción de exclusión |
-| Propiedades: seguridad y pervivencia | **Seguridad:** nunca dos reservas solapadas. **Pervivencia:** el lock se libera al terminar la transacción, aunque el proceso muera, y una transacción abortada se reintenta hasta 3 veces antes de responder `503` |
+| Propiedades: seguridad y pervivencia | **Seguridad:** nunca dos reservas solapadas. **Pervivencia:** el lock se libera al terminar la transacción, aunque el proceso muera, y una transacción abortada se intenta hasta 3 veces en total antes de responder `503` |
 | Problemas del servidor central | Cuello de botella y punto único de falla. Es aceptable: si la base de Reservas no está, no hay reservas que proteger. El lock es por cochera, así que cocheras distintas no se bloquean entre sí |
-| Relojes físicos, deriva, NTP | Todo se guarda en UTC; el vencimiento lo decide la base con su propio reloj (`now()`), no el reloj de cada réplica. En el compose todos los contenedores comparten el reloj del host; con varias máquinas haría falta NTP |
+| Relojes físicos, deriva, NTP | Todo se guarda en UTC. La tarea que expira reservas compara con la hora de la base (`now()`), así que sus réplicas no discrepan. Pero el plazo lo calcula Reservas con su reloj y Pagos compara con el suyo: en el compose comparten el reloj del host; con varias máquinas haría falta NTP. Un desfase de segundos queda cubierto: un cobro de una reserva vencida se reembolsa |
 | Relojes lógicos de Lamport («sucede antes») | El orden de los eventos no se deduce de su hora. Se garantiza con el estado: cada cambio es condicional al estado actual, y la copia local de Pagos nunca retrocede de estado |
 | Elección de líder | No hace falta: no hay un nodo especial. Las réplicas compiten por la cola, y las tareas periódicas usan `SKIP LOCKED` para no pisarse |
-| Consenso | No se usa un protocolo de acuerdo entre servicios. La saga lo reemplaza con transacciones locales y compensaciones |
+| Consenso | Entre servicios no se usa un protocolo de acuerdo: la saga lo reemplaza con transacciones locales y compensaciones. Pero sí hay consenso adentro de una herramienta: las colas *quorum* de RabbitMQ replican cada mensaje con Raft (con un solo nodo, como en el compose, no hay réplicas; en un clúster de 3, un mensaje se confirma cuando lo guardó la mayoría) |
 | ZooKeeper | No hace falta: el único recurso con exclusión mutua es la franja, y su dueño natural (la base de Reservas) ya ofrece locks y restricciones |
 
 **«¿Por qué no usan *two-phase commit* entre Reservas y Pagos?»**
@@ -331,7 +331,7 @@ La tarea periódica toma las filas con `FOR UPDATE SKIP LOCKED`: cada réplica p
 | Trazas | OpenTelemetry a Jaeger; el `traceId` nace en el gateway y viaja por HTTP y dentro de cada evento |
 | Visualización y alertas | Grafana y 18 alertas de Prometheus |
 | Beneficios | Análisis de causa raíz: así se encontró el *deadlock* de Reservas |
-| Desafíos | Monitorear microservicios y contenedores: lo resolvimos con los mismos nombres de métricas en todos los servicios. Volumen de datos: no se registran los health checks |
+| Desafíos | Monitorear microservicios y contenedores: lo resolvimos con el mismo formato de nombres y etiquetas de métricas en todos los servicios. Volumen de datos: no se registran los healthchecks |
 
 **«¿Qué diferencia hay entre métricas y logs?»**
 - **Las métricas** son números agregados, baratos de guardar y consultar, y sirven para alertar: dicen *que* algo anda mal.
@@ -339,6 +339,83 @@ La tarea periódica toma las filas con `FOR UPDATE SKIP LOCKED`: cada réplica p
 - **Las trazas** muestran *dónde*, porque desglosan el tiempo de un pedido por servicio.
 
 ---
+
+## Temas que pueden preguntar aunque parkIN no los use directamente
+
+### Relojes lógicos
+
+- **Lamport:** cada proceso lleva un contador. Lo incrementa en cada evento, lo manda en cada mensaje y, al recibir uno, toma el máximo más uno. Garantiza que si A sucede antes que B, la marca de A es menor. Lo contrario no vale: con marcas distintas no se sabe si dos eventos son concurrentes.
+- **Relojes vectoriales:** cada proceso lleva un contador por proceso. Sirven para detectar si dos eventos son concurrentes.
+- **En parkIN no hacen falta**, porque cada dato tiene un único dueño que ordena sus cambios (Reservas, para la reserva) y los consumidores son idempotentes y condicionales al estado.
+
+### Sincronización de relojes físicos
+
+- **Cristian:** un servidor de tiempo; el cliente ajusta a la hora recibida más la mitad del tiempo de ida y vuelta. Problema: punto único de falla.
+- **Berkeley:** un maestro consulta a todos, promedia y le manda a cada uno su ajuste (sincronización interna).
+- **NTP:** jerarquía de estratos sincronizada con UTC por internet.
+- **En parkIN**, el sistema operativo de la máquina se sincroniza con NTP y los contenedores usan ese reloj.
+
+### Algoritmos de exclusión mutua
+
+| Algoritmo | Mensajes por entrada | Problema | En parkIN |
+|---|---|---|---|
+| Servidor central | 3: pedir, conceder y liberar | Cuello de botella y punto único de falla | **El que usamos**: la base de Reservas es el coordinador, y ya es persistente y compartida |
+| Anillo con token | Variable: el token circula aunque nadie lo pida | Si se pierde el token, hay que regenerarlo | — |
+| Ricart y Agrawala | 2(n-1) | Si cualquier proceso cae, nadie más entra | — |
+
+### Elección de líder
+
+- **Bully:** gana el proceso de mayor id que responde.
+- **Anillo:** el mensaje de elección recorre el anillo juntando ids y gana el mayor.
+- **En parkIN no hay líder:** las réplicas compiten por la cola, y las tareas periódicas se reparten las filas con `SKIP LOCKED`.
+
+### Consenso
+
+- **Paxos y Raft:** un líder propone y se acepta cuando lo confirma la mayoría. Toleran la caída de una minoría.
+- **FLP:** en un sistema asíncrono, si un solo proceso puede fallar, no hay algoritmo determinista que garantice llegar al consenso. Por eso, en la práctica, se usan timeouts.
+- **En parkIN:** las colas *quorum* de RabbitMQ usan Raft.
+
+### Modelos de falla (Coulouris)
+
+| Falla | Qué es | En parkIN |
+|---|---|---|
+| Caída (*crash*) | El proceso se detiene | Healthchecks y reinicio automático; los mensajes sin ACK se reentregan |
+| Omisión | Se pierde un mensaje | ACK manual, reentrega y outbox |
+| Temporización | La respuesta llega tarde | Timeouts (2 s en la consulta de ocupación) y alertas de latencia |
+| Arbitraria (bizantina) | Respuestas incorrectas o maliciosas | No se tolera en general. Se acota validando la entrada, la firma HMAC del webhook y el JWT |
+
+**Sistema síncrono o asíncrono.** El nuestro es asíncrono: no hay un límite garantizado para la respuesta. Por eso no se puede distinguir un servicio lento de uno caído, y usamos timeouts.
+
+### Evolución de contratos (Kleppmann)
+
+- **Compatibilidad hacia atrás:** el código nuevo lee datos viejos.
+- **Compatibilidad hacia adelante:** el código viejo lee datos nuevos.
+- **En parkIN:** los eventos van en JSON y cada consumidor lee solo los campos que necesita, así que sumar un campo no rompe a nadie. Un ejemplo real: para que la dirección exacta venza, Cocheras empezó a guardar el fin de la franja. Las filas anteriores, sin ese dato, siguen funcionando: es compatibilidad hacia atrás.
+
+### Modelo de madurez de Richardson (REST)
+
+Va del nivel 0 (un solo endpoint, estilo RPC) al 1 (recursos), al 2 (verbos y códigos HTTP) y al 3 (HATEOAS: la respuesta trae los enlaces a las acciones posibles). parkIN está en el **nivel 2**. No usa HATEOAS porque el único cliente es nuestra web, que ya conoce las rutas por el contrato.
+
+### Observabilidad: métodos y objetivos
+
+- **RED** (*Rate, Errors, Duration*) por servicio es lo que muestra el tablero: requests por segundo, errores 5xx y latencia p95.
+- **Golden signals** de Google: latencia, tráfico, errores y saturación. La saturación son los eventos pendientes en el outbox y en las colas.
+- **SLI, SLO y SLA:**
+  - el SLI es, por ejemplo, la p95 de la búsqueda;
+  - el SLO implícito son 500 ms (la alerta);
+  - no hay SLA, porque no hay un compromiso con clientes.
+- **Lo conocido y lo desconocido:** el monitoreo cubre lo que ya sabemos preguntar (lo que tiene alerta). La observabilidad permite investigar lo que no sabíamos que iba a pasar, como el *deadlock*, siguiendo el `traceId`.
+
+### Docker: contenedor y máquina virtual
+
+- **Contenedor y máquina virtual:** un contenedor comparte el kernel del host, arranca en segundos y pesa poco. Una máquina virtual emula hardware y trae su propio sistema operativo.
+- **Capas de la imagen:** cada instrucción del Dockerfile es una capa cacheada. Por eso los Dockerfiles copian primero `package.json` e instalan las dependencias, y recién después copian el código: un cambio de código no reinstala todo.
+
+### P2P y distribución vertical u horizontal
+
+- **P2P:** no lo usamos, porque la franja y el pago necesitan una autoridad que decida.
+- **Distribución vertical:** repartir por función. Son nuestros microservicios.
+- **Distribución horizontal:** repartir el mismo servicio en réplicas o particiones. El diseño lo permite, pero no se probó.
 
 ## Preguntas transversales que suelen aparecer
 
@@ -357,7 +434,7 @@ Depende de la operación.
 | Reservas | No se reserva; la búsqueda sigue, sin filtrar por ocupación |
 | Pagos | Se sigue reservando; los eventos esperan en la cola. No se puede pagar hasta que vuelva |
 | RabbitMQ | Los eventos esperan en el outbox; se publican cuando vuelve |
-| Redis | La búsqueda va directo a la base (probado). Los avisos por WebSocket pasan por el adaptador de Redis: no lo probamos con Redis caído, pero la reserva igual se confirma y la pantalla lo ve en la consulta cada 5 s |
+| Redis | La búsqueda va directo a la base (probado). Pagos necesita Redis para arrancar: si se reinicia con Redis caído, no levanta hasta que Redis vuelva. Con Pagos ya levantado, no lo probamos; la reserva igual se confirma y la pantalla lo ve en la consulta cada 5 s |
 
 **«¿Qué cambiarían para producción?»**
 - Varias réplicas probadas, con un orquestador.

@@ -5,15 +5,17 @@ const UUID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
 export class EventoInvalido extends Error {}
 
 const SQL_POR_TIPO = {
-  // El conductor pasa a ver la dirección exacta. Si la reserva ya estaba revocada
-  // (cancelación que llegó antes), no se reabre.
+  // El conductor pasa a ver la dirección exacta hasta que termina su franja. Si la reserva
+  // ya estaba revocada (cancelación que llegó antes), no se reabre.
   'reserva.confirmada': `
-    INSERT INTO acceso_direccion (reserva_id, cochera_id, conductor_id)
-    VALUES ($1, $2, $3) ON CONFLICT (reserva_id) DO NOTHING`,
+    INSERT INTO acceso_direccion (reserva_id, cochera_id, conductor_id, hasta)
+    VALUES ($1, $2, $3, $4) ON CONFLICT (reserva_id) DO NOTHING`,
   'reserva.cancelada': `
-    INSERT INTO acceso_direccion (reserva_id, cochera_id, conductor_id, revocado)
-    VALUES ($1, $2, $3, true) ON CONFLICT (reserva_id) DO UPDATE SET revocado = true`,
+    INSERT INTO acceso_direccion (reserva_id, cochera_id, conductor_id, hasta, revocado)
+    VALUES ($1, $2, $3, $4, true) ON CONFLICT (reserva_id) DO UPDATE SET revocado = true`,
 };
+
+const fecha = (valor) => (typeof valor === 'string' && !Number.isNaN(Date.parse(valor)) ? valor : null);
 
 function validar(evento) {
   const datos = evento?.datos ?? {};
@@ -22,7 +24,11 @@ function validar(evento) {
     throw new EventoInvalido('Faltan eventId, reservaId, cocheraId o conductorId, o no son UUID');
   }
   if (!(evento.tipo in SQL_POR_TIPO)) throw new EventoInvalido(`Tipo de evento no soportado: ${evento.tipo}`);
-  return { eventId: evento.eventId, tipo: evento.tipo, ...datos };
+  // Sin el fin de la franja no se puede saber hasta cuándo mostrar la dirección.
+  if (evento.tipo === 'reserva.confirmada' && !fecha(datos.hasta)) {
+    throw new EventoInvalido('reserva.confirmada sin hasta válido');
+  }
+  return { eventId: evento.eventId, tipo: evento.tipo, ...datos, hasta: fecha(datos.hasta) };
 }
 
 // Devuelve 'aplicado' o 'duplicado'. Registrar el eventId y aplicar el cambio van en la
@@ -40,7 +46,7 @@ export async function procesarEvento(pool, cache, evento) {
       await client.query('ROLLBACK');
       return 'duplicado';
     }
-    await client.query(SQL_POR_TIPO[e.tipo], [e.reservaId, e.cocheraId, e.conductorId]);
+    await client.query(SQL_POR_TIPO[e.tipo], [e.reservaId, e.cocheraId, e.conductorId, e.hasta]);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
