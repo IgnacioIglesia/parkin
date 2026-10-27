@@ -4,6 +4,8 @@
 
 La letra pide al menos uno de los pilares de la observabilidad. Implementamos los tres (**logs, métricas y trazas**) y los unimos con un mismo identificador, el `traceId`, para poder pasar de uno a otro.
 
+Distinguimos observabilidad de monitoreo, como en el curso. La observabilidad es la propiedad de poder entender el estado interno del sistema a partir de lo que emite. El monitoreo es usarla: mirar indicadores, detectar patrones y actuar. Las alertas y el tablero son el monitoreo; los logs, métricas y trazas que los alimentan son la observabilidad.
+
 En parkIN hace falta más de un pilar porque un solo pedido recorre varios procesos. Reservar y pagar pasa por el gateway, Reservas, Cocheras, RabbitMQ, Pagos y la pasarela, y la confirmación vuelve por eventos. Si algo falla, el log de un solo servicio no alcanza para saber dónde: hay que poder seguir el recorrido entero.
 
 ## Cómo se implementó
@@ -85,6 +87,10 @@ Además, la prueba de un evento inválido mostró el camino completo de un fallo
 En la operación diaria, cada señal responde una pregunta distinta. Las **métricas** dicen que algo anda mal (sube la latencia, crecen los conflictos o se acumula el outbox). Las **trazas** dicen dónde (qué servicio o qué consulta tarda). Los **logs** dicen por qué (el error exacto).
 
 ![Desde un log de Loki se salta a su traza](../capturas/cocheras-04-loki-log-a-traza.png)
+
+De los desafíos que plantea el curso, dos se nos presentaron:
+- **El monitoreo de microservicios y contenedores,** que resolvimos haciendo que cada servicio emita lo mismo y con los mismos nombres. Por eso un panel compara la latencia de los cuatro.
+- **El volumen de datos,** que acotamos no registrando los health checks ni `/metrics`, a los que Docker y Prometheus llaman cada pocos segundos.
 
 ## Límites
 
