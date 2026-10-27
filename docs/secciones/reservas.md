@@ -193,7 +193,7 @@ Para ser honestos en la defensa, esto es lo que se resolvió desde la primera ve
 | `FINALIZADA` | **Resuelto.** El mismo proceso periódico finaliza las reservas confirmadas cuya franja terminó |
 | Política de cancelación | **Límite.** Se puede cancelar mientras la reserva esté activa y no haya comenzado, y se reembolsa completo; no hay plazos |
 | Dependencia de Cocheras | **Límite, a propósito.** Sin Cocheras no se pueden crear reservas (`503`). No hay caché ni valores por defecto: el precio debe ser el vigente |
-| Varias réplicas | **Límite.** El diseño lo permite (sin estado en memoria, `SKIP LOCKED` en las tareas periódicas, lock por cochera), pero no se probó con más de una réplica de Reservas |
+| Varias réplicas | **Probado con 2.** El diseño lo permite (sin estado en memoria, `SKIP LOCKED` en las tareas periódicas, lock por cochera) y se probó con 2 réplicas de Reservas y de Pagos (ver «Prueba con 2 réplicas»). **Límite:** no se probó con más de 2, con carga sostenida ni en varias máquinas |
 
 ## 10. Pruebas
 
@@ -208,6 +208,21 @@ La suite del servicio tiene 51 tests de integración contra un PostgreSQL real, 
 | Expiración en 4 réplicas a la vez | Cada reserva expira una sola vez |
 | `pago.aprobado` y expiración en carrera | Cada reserva termina confirmada o expirada, nunca ambas |
 | Broker caído | El evento queda en el outbox y se reintenta |
+
+### Prueba con 2 réplicas
+
+Se levantó el sistema con `docker compose up --scale reservas=2 --scale pagos=2` en un proyecto aparte (con los puertos del host sin publicar, porque dos réplicas no pueden compartir el 8000) y se corrió `scripts/probar-replicas.sh`. El gateway reparte los pedidos entre las dos réplicas porque resuelve el nombre del servicio en cada pedido (`resolver 127.0.0.11`).
+
+| Prueba | Resultado |
+|---|---|
+| 12 rondas de 25 conductores reservando la misma franja a la vez (300 pedidos) | Siempre 1 reserva creada y 24 `409`; ningún `500` |
+| Reparto de pedidos a `/api/reservas` en el gateway | Las dos réplicas recibieron pedidos (186 y 144 en la corrida) |
+| Un pago completo, con los eventos repartidos entre las réplicas | Reserva `CONFIRMADA` |
+| 8 reservas sin pagar y 12 más sin pagar, con la expiración corriendo en las dos réplicas | Todas `EXPIRADA`, y cada una con un solo evento `reserva.expirada` (sin repetidos) |
+| Avisos por WebSocket con el conductor conectado a una réplica de Pagos y el propietario a la otra | 10 de 10 avisos `reserva:confirmada` en cada uno |
+| Eventos repetidos en Pagos o sin publicar en el *outbox*; errores en los logs | Ninguno |
+
+**Qué no se probó:** más de 2 réplicas, Cocheras o Usuarios replicados, carga sostenida, varias máquinas y un orquestador. La prueba valida que el diseño no depende de que haya una sola instancia, no su rendimiento.
 
 ```bash
 cd reservas

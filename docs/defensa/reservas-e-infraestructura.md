@@ -30,7 +30,7 @@ Con una restricción de exclusión en PostgreSQL. Verificar "¿está libre? ento
 Porque la restricción protege los datos, pero con PostgreSQL real dos `INSERT` simultáneos sobre la misma cochera podían esperarse mutuamente y la base abortaba uno por *deadlock*, que llegaba al cliente como un `500`. Nunca hubo doble reserva, pero el error era feo. Lo detectó Diego, lo reproducimos (34 de cada 600 intentos) y vimos que solo reintentar no alcanzaba, así que las altas de una misma cochera ahora hacen fila con un lock de aviso. Después, 0 errores en 3000 intentos.
 
 **¿Qué pasa con dos réplicas de Reservas?**
-El diseño lo soporta: no guarda estado en memoria, la restricción y el lock están en la base, y las tareas periódicas usan `SKIP LOCKED` para no pisarse. **Pero no lo probamos con más de una réplica**; está declarado como límite.
+El diseño lo soporta: no guarda estado en memoria, la restricción y el lock están en la base, y las tareas periódicas usan `SKIP LOCKED` para no pisarse. **Lo probamos con 2 réplicas** de Reservas y de Pagos (`scripts/probar-replicas.sh`): en 12 rondas de 25 reservas simultáneas entró siempre una sola, la expiración corrió en las dos réplicas y cada reserva venció una sola vez. **No probamos con más de 2, con carga sostenida ni en varias máquinas**; está declarado como límite.
 
 **¿Qué es el outbox y por qué lo usan?**
 Si el servicio guardara la reserva y después publicara en RabbitMQ, un fallo entre los dos pasos dejaría una reserva sin evento (Pagos nunca cobra) o un evento de algo que se revirtió. El evento se guarda en la misma transacción que el cambio de estado, y un hilo aparte lo publica con confirmación del broker. Si RabbitMQ está caído, el evento espera en la tabla `outbox`; la métrica `reservas_outbox_pendientes` lo muestra.
@@ -63,7 +63,7 @@ Solo si Reservas es accesible únicamente a través del gateway. En el compose d
 Reservas sigue creando reservas: los eventos esperan en el outbox, y cuando vuelve el broker salen. Si cae Pagos, los eventos esperan en su cola durable y los procesa al volver. Lo probamos apagando Pagos, reservando, y encendiéndolo.
 
 **¿Cómo se despliega? ¿Escala?**
-Con `docker compose up --build`. Los servicios son contenedores sin estado y se reinician solos. El diseño permite escalar horizontalmente, pero **solo probamos una réplica de cada uno**, y no hay orquestador ni autoescalado: eso quedó como evolución (ver "Despliegue en la nube" de la segunda entrega).
+Con `docker compose up --build`. Los servicios son contenedores sin estado y se reinician solos. El diseño permite escalar horizontalmente, pero **solo probamos 2 réplicas de Reservas y de Pagos** (el resto, con una), y no hay orquestador ni autoescalado: eso quedó como evolución (ver "Despliegue en la nube" de la segunda entrega).
 
 **¿Qué haría distinto con más tiempo?**
 Probar varias réplicas, quitar los puertos de desarrollo, definir la política de cancelación con plazos, y reemplazar la pasarela simulada por una real.

@@ -291,7 +291,7 @@ Reservas y Pagos siguen funcionando: los eventos quedan en su tabla outbox y sal
 | Alternativas: polling, long polling, SSE | Solo con polling, el aviso tarda lo que tarde la próxima consulta y cada pestaña carga al servidor. Usamos WebSocket para el aviso inmediato y dejamos una consulta cada 5 s como respaldo mientras la reserva espera el pago. SSE alcanzaría para avisos de un solo sentido, pero Socket.IO trae reconexión y salas por usuario |
 | Handshake (`Upgrade`, 101 Switching Protocols) | Lo hace Socket.IO a través del gateway, que deja pasar el `Upgrade` |
 | Heartbeat (ping/pong) y reconexión | Socket.IO los maneja solo |
-| Conexión con estado y escalado horizontal difícil | **Adaptador de Redis** (el Pub/Sub compartido de la clase): está pensado para que un aviso llegue aunque el cliente esté conectado a otra réplica de Pagos. No lo probamos con más de una réplica |
+| Conexión con estado y escalado horizontal difícil | **Adaptador de Redis** (el Pub/Sub compartido de la clase): está pensado para que un aviso llegue aunque el cliente esté conectado a otra réplica de Pagos. Lo probamos con 2 réplicas de Pagos: el aviso llegó al cliente conectado a la otra réplica (`scripts/probar-replicas.sh`). No lo probamos con más de 2 |
 | Autenticación | El JWT va en el handshake (`auth.token`) y se verifica al conectar |
 
 **«¿Y si el aviso por WebSocket se pierde?»**
@@ -415,7 +415,7 @@ Va del nivel 0 (un solo endpoint, estilo RPC) al 1 (recursos), al 2 (verbos y c�
 
 - **P2P:** no lo usamos, porque la franja y el pago necesitan una autoridad que decida.
 - **Distribución vertical:** repartir por función. Son nuestros microservicios.
-- **Distribución horizontal:** repartir el mismo servicio en réplicas o particiones. El diseño lo permite, pero no se probó.
+- **Distribución horizontal:** repartir el mismo servicio en réplicas o particiones. El diseño lo permite y se probó con 2 réplicas de Reservas y de Pagos; no con más ni con carga sostenida.
 
 ## Preguntas transversales que suelen aparecer
 

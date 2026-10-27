@@ -147,5 +147,5 @@ En el compose, el gateway espera a que el servicio `jwt-claves` termine de gener
 ## 10. Provisorio o pendiente
 
 - **Métricas por ruta o código.** `stub_status` solo da totales. Para tener latencia y errores por ruta en Prometheus haría falta el módulo VTS (que no viene en la imagen oficial) o NGINX Plus. Hoy esos datos salen de los logs JSON del gateway y de las métricas de cada servicio.
-- **Varias réplicas de Pagos.** El contrato menciona *sticky sessions* para `/ws`. Hoy no hacen falta: hay una sola réplica, y con transporte WebSocket la conexión queda fija en una réplica. Si se escala Pagos y algún cliente usa *long polling*, habría que agregar `ip_hash` o `hash` en un `upstream`.
+- **Varias réplicas de Pagos.** El contrato menciona *sticky sessions* para `/ws`. Hoy no hacen falta: con transporte WebSocket la conexión queda fija en una réplica (se probó con 2 réplicas de Pagos y clientes WebSocket, sin *long polling*). Si se escala Pagos y algún cliente usa *long polling*, habría que agregar `ip_hash` o `hash` en un `upstream`.
 - **Puertos de desarrollo.** El compose todavía expone Usuarios (`3001`), Cocheras (`4000`) y Reservas (`8000`) directo en el host, para probarlos sin gateway. Pagos ya no se expone: solo se llega a él por el gateway. En un despliegue real solo se publicaría el gateway.

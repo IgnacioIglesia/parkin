@@ -100,7 +100,7 @@ El WebSocket va de Pagos a la web, y se usa para un solo propósito: avisar en e
 
 - **Autenticación en el *handshake*.** El navegador no puede mandar headers personalizados en un WebSocket, así que el token viaja en la conexión y Pagos lo verifica con la clave pública. Un token falso se rechaza con `TOKEN_INVALIDO`.
 - **Salas por usuario.** Cada conexión entra a la sala `user:{id}`. Cada aviso se emite a la sala del destinatario: nadie recibe avisos de reservas ajenas, y si el usuario tiene varias pestañas abiertas, le llegan a todas.
-- **Varias réplicas.** El adaptador de Redis reparte cada aviso entre réplicas de Pagos: llega aunque el cliente esté conectado a otra instancia. Está implementado y no se probó con más de una réplica. Si Redis no responde al arrancar, Pagos arranca igual sin el adaptador.
+- **Varias réplicas.** El adaptador de Redis reparte cada aviso entre réplicas de Pagos: llega aunque el cliente esté conectado a otra instancia. Se probó con 2 réplicas de Pagos: el conductor conectado a una y el propietario conectado a la otra recibieron los 10 avisos de confirmación, aunque el evento lo consumiera cualquiera de las dos. Si Redis no responde al arrancar, Pagos arranca igual sin el adaptador.
 - **Es un aviso, no la fuente de verdad.** Si el usuario estaba desconectado, no se pierde información: la reserva se consulta por REST. La pantalla además consulta el estado cada 5 segundos mientras la reserva espera el pago, como respaldo.
 
 Frente a las alternativas: con *polling* solo, el aviso tarda lo que tarde la próxima consulta y cada pestaña carga al servidor; con *Server-Sent Events* alcanzaría para avisos en un solo sentido, pero Socket.IO trae reconexión y salas por usuario.
@@ -141,4 +141,4 @@ Un mismo identificador de traza (`traceId`) recorre los pasos: nace en el gatewa
 - **Reservas y Cocheras dependen la una de la otra en forma síncrona.** Es el acoplamiento más fuerte que quedó: sin Cocheras no se crean reservas. Se aceptó porque el conductor espera esa respuesta y el precio no puede venir del cliente.
 - **El contexto de traza viaja solo como `traceId` dentro de los eventos**, no como el `traceparent` completo, y el gateway no aparece como un tramo en las trazas. En Jaeger, algunos tramos muestran un aviso de padre desconocido.
 - **La entrega de eventos es *at-least-once***, no exactamente una vez: la idempotencia de los consumidores es lo que lo compensa.
-- **El WebSocket se probó con una sola réplica de Pagos.**
+- **El WebSocket se probó con 2 réplicas de Pagos**, no con más ni con carga sostenida.
