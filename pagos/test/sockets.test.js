@@ -57,6 +57,25 @@ test('el mismo usuario en dos pestañas las recibe en ambas', async () => {
   await ambos;
 });
 
+test('con Redis caído arranca igual, sin el adaptador, y los avisos llegan', async () => {
+  // Nada escucha en el puerto 1: Redis no responde.
+  const sinRedis = await crearNotificaciones({ verificar, logger, redisUrl: 'redis://127.0.0.1:1', esperaRedisMs: 300 });
+  await new Promise((r) => sinRedis.servidor.listen(0, r));
+  try {
+    const usuario = randomUUID();
+    const cliente = conectarCliente(`http://localhost:${sinRedis.servidor.address().port}`, {
+      path: '/ws', auth: { token: tokenDe(usuario) }, transports: ['websocket'], reconnection: false,
+    });
+    clientes.push(cliente);
+    await once(cliente, 'connect');
+    const recibido = once(cliente, 'reserva:confirmada');
+    sinRedis.notificar(usuario, 'reserva:confirmada', { reservaId: 'r-2' });
+    assert.deepEqual((await recibido)[0], { reservaId: 'r-2' });
+  } finally {
+    await sinRedis.cerrar();
+  }
+});
+
 test('sin token, con token vencido o inválido: connect_error TOKEN_INVALIDO', async () => {
   const tokens = [undefined, '', 'abc.def.ghi', tokenDe(randomUUID(), { expiresIn: -10 }), 12345];
   for (const token of tokens) {

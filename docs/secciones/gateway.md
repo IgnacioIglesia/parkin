@@ -54,7 +54,7 @@ sequenceDiagram
 
 | Opción | Por qué no |
 |---|---|
-| `auth_request` contra `GET /auth/verificar` de Usuarios | Funcionaba (fue la primera versión), pero suma una llamada por request y hace depender a todo el sistema de Usuarios. El endpoint quedó como alternativa |
+| `auth_request` contra `GET /auth/verificar` de Usuarios | Funcionaba (fue la primera versión), pero suma una llamada por request y hace depender a todo el sistema de Usuarios. El endpoint se borró de Usuarios el 26/10 porque nadie lo usaba; está en el historial de git (PR #20) |
 | OpenResty (NGINX + Lua) | Reemplaza la imagen oficial de NGINX y agrega otro lenguaje |
 
 **Qué controla `jwt.js`:**

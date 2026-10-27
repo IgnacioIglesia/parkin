@@ -143,6 +143,7 @@ Socket.IO sobre WebSocket en `/ws`, a través del gateway.
 - **Autenticación.** El token viaja en el handshake (`auth.token`), no en un header, así que lo verifica el propio Pagos al conectar con la clave pública de Usuarios. Sin token válido, la conexión se rechaza con `connect_error: TOKEN_INVALIDO` y el front refresca el token y reconecta.
 - **Salas.** Cada socket entra a `user:{id}`. Los avisos se emiten a la sala del destinatario, así que un usuario nunca recibe avisos de reservas ajenas, y si tiene varias pestañas abiertas le llegan a todas.
 - **Varias réplicas.** El adaptador de Redis reparte cada aviso entre réplicas: llega aunque el cliente esté conectado a otra instancia de Pagos.
+- **Sin Redis.** Si Redis no responde al arrancar, Pagos espera 5 segundos y arranca igual sin el adaptador, con un `warn` en el log. Con una sola réplica los avisos llegan igual; con varias, solo les llegan a los clientes conectados a la misma réplica, y el resto se entera por la consulta de respaldo de la web. Antes, Pagos se quedaba esperando a Redis y nunca abría el puerto.
 - **Best effort.** Si un aviso se pierde (el usuario estaba desconectado), no se pierde información: la fuente de verdad sigue siendo `GET /api/reservas/{id}`.
 
 | Evento | Destinatarios | Payload |
@@ -203,7 +204,7 @@ Son dos trazas porque son dos acciones del conductor: reservar y pagar. Cada una
 
 ## 12. Pruebas
 
-**Automáticas.** `npm test` corre 60 tests contra un PostgreSQL real, porque los bloqueos y los índices únicos son parte de lo que se prueba (`TEST_DATABASE_URL=postgres://app:app@localhost:5444/pagos_test npm test`). Cubren la API y sus errores, los pagos concurrentes, la firma HMAC, el webhook repetido y adulterado, los eventos fuera de orden y repetidos, el outbox y el WebSocket. Resultado: 60 de 60.
+**Automáticas.** `npm test` corre 61 tests contra un PostgreSQL real, porque los bloqueos y los índices únicos son parte de lo que se prueba (`TEST_DATABASE_URL=postgres://app:app@localhost:5444/pagos_test npm test`). Cubren la API y sus errores, los pagos concurrentes, la firma HMAC, el webhook repetido y adulterado, los eventos fuera de orden y repetidos, el outbox y el WebSocket, también con Redis caído. Resultado: 61 de 61.
 
 **De punta a punta** (todo el sistema con `docker compose up`, todo a través del gateway):
 
@@ -253,3 +254,4 @@ Tomadas con el sistema levantado con `docker compose up`, en el front (`localhos
 - **Padre desconocido en Jaeger.** Los spans que se cuelgan de un `traceId` suelto (eventos y webhook) no conocen el span padre, porque solo viaja el `traceId`. Jaeger los muestra en la traza correcta con el aviso "invalid parent span", igual que en Cocheras y Reservas. Mandar el `traceparent` completo en los eventos lo resolvería, pero cambia el contrato de los tres servicios.
 - **Pasarela simulada.** Guarda las órdenes en memoria (si se reinicia, se pierden), y quien conozca el id de una orden puede aprobarla o rechazarla desde la página. Es aceptable para una simulación. Con una pasarela real el resultado lo decide el proveedor y lo firma él.
 - **Moneda única.** Todo se cobra en UYU, como lo calcula Reservas.
+- **Redis que vuelve.** Si Pagos arrancó sin Redis, no suma el adaptador cuando Redis vuelve: hay que reiniciar Pagos. Con una sola réplica no cambia nada.
