@@ -7,15 +7,15 @@ import { latencia, solicitudes } from '../metricas.js';
 const TRACEPARENT = /^[\da-f]{2}-([\da-f]{32})-[\da-f]{16}-[\da-f]{2}$/;
 const TRACE_ID_INVALIDO = '0'.repeat(32);
 
-// Sin línea de log: los llaman Docker, Prometheus y el gateway (una verificación por request).
-const SIN_LOG = new Set(['/health', '/ready', '/metrics', '/auth/verificar']);
+// Sin línea de log: los llaman Docker y Prometheus cada pocos segundos.
+const SIN_LOG = new Set(['/health', '/ready', '/metrics']);
 
 export function traza(req, res, next) {
   req.traceId = traceIdDe(req);
   req.log = logger.child({ traceId: req.traceId });
   res.set('X-Trace-Id', req.traceId);
 
-  // Se guarda acá: al terminar, dentro de un router, req.path ya es relativo (/verificar).
+  // Se guarda acá: al terminar, dentro de un router, req.path ya es relativo (/login, no /auth/login).
   const path = req.path;
   const inicio = process.hrtime.bigint();
   res.on('finish', () => {

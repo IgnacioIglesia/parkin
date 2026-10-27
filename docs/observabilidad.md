@@ -54,6 +54,7 @@ Además de las de Reservas (más abajo), `infra/prometheus/alertas.yml` define:
 | Alerta | Condición |
 |---|---|
 | `ServicioCaido` | Prometheus no puede leer las métricas de un servicio durante 1 minuto |
+| `GatewayCaido` | El exportador no puede leer a NGINX durante 1 minuto (`nginx_up == 0`): el único punto de entrada no responde |
 | `EventosEnDLQ` | Hay mensajes en `cocheras.dlq` durante 1 minuto |
 | `CocherasErroresInternos` | Más de 2 % de operaciones GraphQL con error interno durante 5 minutos |
 | `CocherasBusquedaLenta` | p95 de `buscarCocheras` mayor a 500 ms durante 5 minutos |
@@ -117,13 +118,13 @@ Tres señales, todas con el mismo `traceId`.
 
 Prometheus las recoge desde `infra/prometheus/prometheus.yml` y evalúa las alertas de `infra/prometheus/alertas.yml`: errores 5xx > 2 %, p95 de `POST /reservas` > 800 ms, outbox acumulado y exceso de expiraciones.
 
-**Trazabilidad.** El gateway genera el `traceId` (header W3C `traceparent`); Reservas lo toma, lo devuelve en el header `X-Trace-Id`, lo escribe en cada log y lo copia al campo `traceId` de cada evento que publica. Para seguir una reserva: buscar su `traceId` en los logs de los servicios. **Trazas a Jaeger.** Con `OTEL_EXPORTER_OTLP_ENDPOINT` definido (en Compose, `http://jaeger:4318`), Reservas exporta trazas OpenTelemetry por OTLP/HTTP con `service.name=reservas`. Instrumenta el request (un span hijo del `traceparent` entrante), la llamada a Cocheras (que así continúa la **misma traza**: `reservas POST /reservas` → `cocheras POST` → GraphQL → consulta SQL) y las consultas SQL. Los eventos de RabbitMQ solo llevan el `traceId`, así que su publicación (`publicar reserva.creada`) y su procesamiento (`procesar pago.aprobado`) quedan en esa misma traza con un padre desconocido, igual que en Cocheras. Con las trazas activas, el `traceId` de los logs y de los eventos es el del span, de modo que se puede buscar directamente en Jaeger. Sin la variable no se exporta nada. Pagos todavía no exporta trazas, así que la traza se corta ahí.
+**Trazabilidad.** El gateway genera el `traceId` (header W3C `traceparent`); Reservas lo toma, lo devuelve en el header `X-Trace-Id`, lo escribe en cada log y lo copia al campo `traceId` de cada evento que publica. Para seguir una reserva: buscar su `traceId` en los logs de los servicios. **Trazas a Jaeger.** Con `OTEL_EXPORTER_OTLP_ENDPOINT` definido (en Compose, `http://jaeger:4318`), Reservas exporta trazas OpenTelemetry por OTLP/HTTP con `service.name=reservas`. Instrumenta el request (un span hijo del `traceparent` entrante), la llamada a Cocheras (que así continúa la **misma traza**: `reservas POST /reservas` → `cocheras POST` → GraphQL → consulta SQL) y las consultas SQL. Los eventos de RabbitMQ solo llevan el `traceId`, así que su publicación (`publicar reserva.creada`) y su procesamiento (`procesar pago.aprobado`) quedan en esa misma traza con un padre desconocido, igual que en Cocheras. Con las trazas activas, el `traceId` de los logs y de los eventos es el del span, de modo que se puede buscar directamente en Jaeger. Sin la variable no se exporta nada. Pagos también exporta trazas: procesa `reserva.creada` en esta misma traza, y el pago, el webhook y la confirmación quedan en la traza del "Pagar" (ver `docs/secciones/pagos.md`, sección 11).
 
 **Qué permite detectar.** Un pico de `reservas_conflictos_total` indica competencia por las mismas cocheras; `reservas_outbox_pendientes` creciendo, un problema con RabbitMQ aunque la API siga respondiendo bien; muchas expiraciones, un problema con Pagos.
 
 ## Usuarios (implementado)
 
-**Logs.** JSON a stdout (`pino`) con `servicio`, `nivel`, `traceId` (del `traceparent` del gateway) y `usuarioId`; una línea por request con método, ruta, estado y `duracionMs`. No se registran `/health`, `/ready`, `/metrics` ni `/auth/verificar` (los llaman Docker, Prometheus y el gateway en cada request). Contraseñas y tokens se eliminan de cualquier log.
+**Logs.** JSON a stdout (`pino`) con `servicio`, `nivel`, `traceId` (del `traceparent` del gateway) y `usuarioId`; una línea por request con método, ruta, estado y `duracionMs`. No se registran `/health`, `/ready` ni `/metrics` (los llaman Docker y Prometheus cada pocos segundos). Contraseñas y tokens se eliminan de cualquier log.
 
 **Métricas.** `GET /metrics`, recogido por Prometheus (job `usuarios`). Interno: lo que llega por el gateway trae `X-Forwarded-For` y Usuarios responde 404.
 
@@ -134,8 +135,19 @@ Prometheus las recoge desde `infra/prometheus/prometheus.yml` y evalúa las aler
 | `usuarios_registros_total` | Cuentas nuevas |
 | `usuarios_logins_total{resultado}` | `ok` o `fallido` |
 | `usuarios_refresh_total{resultado}` | `ok`, `gracia`, `invalido` o `reutilizado` |
-| `usuarios_verificaciones_total{resultado}` | Verificaciones de JWT del gateway: `ok`, `anonimo`, `invalido` |
 
-**Trazas.** OpenTelemetry con instrumentación automática de HTTP y pg, exportada a Jaeger igual que Cocheras (`usuarios/src/telemetria.js`, cargado con `node --import`; sin `OTEL_EXPORTER_OTLP_ENDPOINT` no hace nada). El span de cada request continúa el `traceparent` del gateway y su `traceId` es el de los logs y el header `X-Trace-Id`. Un login o un registro se ve como `POST` → consultas SQL. `/auth/verificar` no se traza: el gateway lo llama en cada request y llenaría Jaeger de trazas de una línea; se sigue en `usuarios_verificaciones_total` y en la alerta `UsuariosVerificacionLenta`. Las consultas de la migración al arrancar tampoco, porque no pertenecen a ninguna request.
+**Trazas.** OpenTelemetry con instrumentación automática de HTTP y pg, exportada a Jaeger igual que Cocheras (`usuarios/src/telemetria.js`, cargado con `node --import`; sin `OTEL_EXPORTER_OTLP_ENDPOINT` no hace nada). El span de cada request continúa el `traceparent` del gateway y su `traceId` es el de los logs y el header `X-Trace-Id`. Un login o un registro se ve como `POST` → consultas SQL. Los health checks y `/metrics` no se trazan: los llaman Docker y Prometheus cada pocos segundos. Las consultas de la migración al arrancar tampoco, porque no pertenecen a ninguna request.
 
 **Qué permite detectar.** Un pico de `usuarios_logins_total{resultado="fallido"}` indica un ataque de fuerza bruta (además del rate limiting del gateway); cualquier `usuarios_refresh_total{resultado="reutilizado"}` es una sesión posiblemente robada; muchas verificaciones `invalido` apuntan a un front con tokens vencidos que no refresca.
+
+## Gateway (implementado)
+
+**Logs.** Una línea JSON por request (`log_format json` en `gateway/nginx.conf`) con los mismos campos que los servicios: `nivel`, `servicio` (`gateway`), `msg`, `traceId` y `usuarioId` (el del JWT validado; vacío si no hay token). Además trae `metodo`, `ruta` (la que pidió el cliente, sin query), `estado`, `duracionMs`, `bytes`, `upstream` (a qué contenedor fue) e `ip`. El `nivel` sale del estado: `error` para `5xx`, `warn` para `4xx` y `info` para el resto, así que en Loki `{servicio="gateway", nivel="warn"}` muestra los `401` y los `429`. No se registra `/health` (lo llama Docker cada 10 s), y nunca se loguean headers, cuerpos ni la query.
+
+Como el gateway es el que genera el `traceId`, su línea es la primera del recorrido: `{servicio=~".+"} |= "<traceId>"` trae la línea del gateway y la de cada servicio por el que pasó el pedido.
+
+El log de errores de NGINX (desde `warn`, incluye los tokens que `jwt.js` rechaza por mal formados) no puede ser JSON. Alloy le saca el nivel del texto con una etapa `stage.regex` en `infra/alloy/config.alloy`, así que también se filtra con `{servicio="gateway", nivel="warn"}`.
+
+**Métricas.** `stub_status` de NGINX en el puerto interno `8088` (no publicado en el host), traducido por el contenedor `gateway-exporter` (`nginx-prometheus-exporter`) y leído por Prometheus como job `gateway`: `nginx_up`, `nginx_http_requests_total` y conexiones activas, aceptadas y atendidas. La alerta `GatewayCaido` (`nginx_up == 0` durante 1 minuto) avisa si el único punto de entrada deja de responder. Son totales: los errores por código se ven en los logs.
+
+**Qué permite detectar.** Un pico de `warn` con `estado` `401` indica tokens vencidos o un intento de acceso sin sesión; con `429`, alguien superando el rate limiting. Un `502` en `upstream` vacío o con un servicio puntual indica que ese servicio está caído aunque el resto responda.

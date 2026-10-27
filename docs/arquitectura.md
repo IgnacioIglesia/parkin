@@ -59,6 +59,7 @@ Endpoints, eventos y esquema: [`contratos.md`](contratos.md).
 2. El gateway verifica la firma, `exp` y emisor **localmente** con la clave pública, sin llamar a Usuarios en cada request, y pasa la identidad a los servicios en `X-User-Id` y `X-User-Roles`. Descarta siempre lo que el cliente mande en esos headers.
 3. Hay rutas públicas (registro, login, webhook de la pasarela), rutas con token obligatorio (Reservas, Pagos, perfil) y una con token opcional (`/graphql`, para poder buscar cocheras sin sesión).
 4. Defensa en profundidad: Usuarios y Pagos vuelven a verificar el token. Pagos lo necesita igual para el handshake del WebSocket.
+5. **Decisión: se borró `GET /auth/verificar` de Usuarios (26/10).** La primera versión del gateway validaba con `auth_request` contra ese endpoint; cuando pasó a verificar localmente con njs (punto 2), quedó sin uso. Se evaluó dejarlo como alternativa para un NGINX sin njs, pero se borró junto con su métrica y sus tests: un endpoint que nadie llama no se prueba en la práctica y suma superficie de ataque. Si hiciera falta volver a `auth_request`, está en el historial de git (PR #20).
 
 ## Flujo principal: reservar y pagar
 
@@ -125,6 +126,28 @@ Casos de falla, todos con compensación:
 
 ## Despliegue
 
+### Levantar el sistema
+
+```bash
+docker compose up --build
+```
+
+Alcanza también la primera vez: el servicio `jwt-claves` genera las claves de los JWT en `infra/jwt/` si faltan (no se commitean; para regenerarlas, borrar `infra/jwt/*.pem` y volver a levantar). Para cargar cocheras de demo: `node scripts/sembrar-cocheras.mjs`.
+
+| Qué | Dónde |
+|---|---|
+| Web | http://localhost:8081 |
+| API Gateway | http://localhost:8080 |
+| Pasarela de pago de prueba | http://localhost:8090 |
+| RabbitMQ (gestión) | http://localhost:15672 (`guest` / `guest`) |
+| Grafana | http://localhost:3030 |
+| Prometheus | http://localhost:9090 |
+| Jaeger | http://localhost:16686 |
+
+Los servicios se reinician solos si Docker o la máquina se reinician (`restart: unless-stopped`). Si algún servicio queda caído, `docker compose up -d` lo levanta sin borrar datos, y `docker compose ps` muestra el estado.
+
+### Detalles
+
 Todo el sistema se levanta con `docker compose up --build`. El front puede servirse desde su contenedor o desplegarse en Vercel, en cuyo caso el gateway tiene que ser accesible por HTTPS y permitir ese origen (CORS). La configuración va por variables de entorno (12-Factor); ver [`12-factor.md`](12-factor.md). Para mostrarlo desde otro dispositivo (por ejemplo en la defensa) hay un script que abre un túnel público: ver [`demo-remoto.md`](demo-remoto.md).
 
 ## Límites conocidos
@@ -132,4 +155,5 @@ Todo el sistema se levanta con `docker compose up --build`. El front puede servi
 - Cocheras y Reservas dependen una de la otra en forma síncrona: sin Cocheras no se pueden crear reservas (`503`); sin Reservas, la búsqueda de Cocheras no filtra por ocupación.
 - La política de cancelación todavía no define plazos: se puede cancelar mientras la reserva no haya empezado, y se reembolsa completo.
 - La pasarela es simulada: no se mueve dinero real.
+- **Puertos de desarrollo.** El compose publica también los puertos de algunos servicios (Cocheras 4000, Reservas 8000, Pagos 8084, Usuarios 3001) y de las bases de datos, para probarlos sin pasar por el gateway. Como Reservas y Cocheras confían en los headers `X-User-Id` y `X-User-Roles` que pone el gateway, llamándolos directo se podría hacer pasar por otro usuario. En un despliegue real solo se publicaría el gateway (o la web), y las credenciales de desarrollo (`app/app`, `guest/guest`) se reemplazarían por secretos propios.
 - Los servicios corren con una sola réplica en el compose; el diseño permite escalar (servicios sin estado, adaptador Redis de Socket.IO, `SKIP LOCKED` en las tareas periódicas), pero no se probó con varias réplicas.
