@@ -30,7 +30,7 @@ const PUNTO_PROPIO = 'punto-en-el-mapa';
 function FormBusqueda({ form, puntoPropio, invalido, onCambiar, onBuscar, buscando }) {
   return (
     <form
-      className="grid grid-cols-2 gap-2 sm:grid-cols-[1.3fr_1fr_1fr_0.8fr_auto] sm:items-stretch"
+      className="grid grid-cols-2 gap-2 sm:grid-cols-[0.85fr_1.2fr_1.2fr_0.75fr_auto] sm:items-stretch"
       onSubmit={(e) => {
         e.preventDefault();
         onBuscar();

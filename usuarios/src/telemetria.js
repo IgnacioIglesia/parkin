@@ -7,9 +7,9 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 // Se carga antes que la app (node --import) para poder instrumentar http y pg.
 // Sin OTEL_EXPORTER_OTLP_ENDPOINT no hace nada (tests, local).
 
-// /auth/verificar también queda afuera: el gateway lo llama en cada request y llenaría Jaeger
-// de trazas de una sola línea. Se sigue midiendo en usuarios_verificaciones_total.
-const RUTAS_SIN_TRAZA = new Set(['/health', '/ready', '/metrics', '/auth/verificar']);
+// Health checks y métricas quedan afuera: los piden Docker y Prometheus cada pocos segundos y
+// llenarían Jaeger de trazas de una sola línea.
+const RUTAS_SIN_TRAZA = new Set(['/health', '/ready', '/metrics']);
 
 let sdk = null;
 

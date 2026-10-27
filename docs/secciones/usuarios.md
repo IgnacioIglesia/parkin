@@ -25,7 +25,6 @@ Usuarios registra cuentas, autentica, emite los tokens de sesión y administra p
 | POST | `/auth/refresh` | Rota el refresh token y devuelve una sesión nueva |
 | POST | `/auth/logout` | Revoca ese refresh token |
 | POST | `/auth/logout-todos` | Revoca todas las sesiones de la cuenta |
-| GET | `/auth/verificar` | Valida el JWT y devuelve la identidad en headers. Alternativa para el gateway; hoy no se usa (ver sección 5) |
 | GET / PATCH | `/users/me` | Perfil del usuario autenticado; actualiza nombre y teléfono |
 | POST | `/users/me/roles` | Suma un rol y devuelve un access token con los roles nuevos |
 | GET | `/users/{id}` | Perfil público mínimo (`id`, `nombre`) |
@@ -78,7 +77,7 @@ Usuarios firma los tokens y el gateway los verifica **por su cuenta**, sin llama
 - Si el token es válido, el gateway pasa la identidad en `X-User-Id` y `X-User-Roles` (por ejemplo `PROPIETARIO,CONDUCTOR`). Siempre pisa los que mande el cliente, así que nadie puede hacerse pasar por otro.
 - Si el gateway no puede leer la clave pública, falla cerrado: responde `503 AUTH_NO_DISPONIBLE` y no deja pasar nada.
 
-**Por qué así y no consultando a Usuarios.** Antes de esta versión, el gateway usaba `auth_request` contra `GET /auth/verificar` de Usuarios, que hacía la misma verificación. Funcionaba, pero cada request protegido sumaba una llamada interna y, si Usuarios se caía, se caían también Reservas, Pagos y las mutaciones de Cocheras. Verificar con la clave pública en el gateway es lo que planteaba la segunda entrega: Usuarios es el único que firma, y verificar no necesita ningún secreto. `GET /auth/verificar` sigue existiendo como alternativa, con el mismo contrato de headers, pero el gateway no lo usa.
+**Por qué así y no consultando a Usuarios.** Antes de esta versión, el gateway usaba `auth_request` contra `GET /auth/verificar` de Usuarios, que hacía la misma verificación. Funcionaba, pero cada request protegido sumaba una llamada interna y, si Usuarios se caía, se caían también Reservas, Pagos y las mutaciones de Cocheras. Verificar con la clave pública en el gateway es lo que planteaba la segunda entrega: Usuarios es el único que firma, y verificar no necesita ningún secreto. Una vez que el gateway pasó a verificar solo, `GET /auth/verificar` quedó sin uso y se borró, junto con su métrica: un endpoint que nadie llama es código que hay que mantener y que nadie prueba.
 
 **Evidencia** (prueba de punta a punta contra el gateway, hecha cuando validaba con `/auth/verificar`; el comportamiento hacia los servicios es el mismo): sin token, `401`; con `X-User-Id` falso y sin token, `401`; con token de conductor, `crearCochera` responde `FORBIDDEN` (los roles llegan a Cocheras); y **8 conductores reservando a la vez la misma franja: una reserva creada y 7 respuestas `409`**.
 
@@ -103,7 +102,6 @@ Usuarios firma los tokens y el gateway los verifica **por su cuenta**, sin llama
 | `usuarios_registros_total` | Cuentas nuevas |
 | `usuarios_logins_total{resultado}` | `ok` o `fallido`; un pico de fallidos indica fuerza bruta |
 | `usuarios_refresh_total{resultado}` | `ok`, `gracia`, `invalido` o `reutilizado` (posible robo de sesión) |
-| `usuarios_verificaciones_total{resultado}` | Llamadas a `/auth/verificar`: `ok`, `anonimo`, `invalido` (hoy en cero, ver sección 5) |
 
 ## 8. Pruebas
 
@@ -111,5 +109,4 @@ Usuarios firma los tokens y el gateway los verifica **por su cuenta**, sin llama
 
 ## 9. Provisorio o pendiente
 
-- `GET /auth/verificar` no lo usa nadie desde que el gateway valida el JWT con njs (sección 5). Se mantiene como alternativa; si se decide no usarlo nunca, se puede borrar junto con su métrica `usuarios_verificaciones_total`.
-- `docs/contratos.md` §3 lista cinco endpoints; los demás de la sección 2 se proponen al contrato por PR.
+Nada pendiente: todo lo descrito en esta sección está implementado en `main` y probado.

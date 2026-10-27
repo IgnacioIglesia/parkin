@@ -4,10 +4,10 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { enTransaccion, pool } from '../db.js';
 import { HttpError } from '../errores.js';
-import { logins, refrescos, registros, verificaciones } from '../metricas.js';
+import { logins, refrescos, registros } from '../metricas.js';
 import { requiereAuth } from '../middleware/auth.js';
 import * as repo from '../repositorio.js';
-import { firmarAccessToken, hashToken, nuevoRefreshToken, verificarAccessToken } from '../tokens.js';
+import { firmarAccessToken, hashToken, nuevoRefreshToken } from '../tokens.js';
 
 export const ROLES = ['PROPIETARIO', 'CONDUCTOR'];
 
@@ -121,29 +121,6 @@ authRouter.post('/refresh', async (req, res) => {
   res.json(resultado.sesion);
 });
 
-// Para el gateway (auth_request de NGINX): valida el access token y devuelve la identidad en
-// X-User-Id y X-User-Roles, que el gateway reenvía a Reservas, Cocheras y Pagos.
-// Sin header Authorization responde 204 sin identidad (anónimo): cada servicio decide si su
-// ruta exige usuario. Un token inválido o vencido da 401, y el front refresca la sesión.
-authRouter.get('/verificar', (req, res) => {
-  const autorizacion = req.get('authorization');
-  if (!autorizacion) {
-    verificaciones.labels('anonimo').inc();
-    return res.status(204).end();
-  }
-  const [tipo, token] = autorizacion.split(' ');
-  try {
-    if (tipo !== 'Bearer' || !token) throw new Error('formato');
-    const payload = verificarAccessToken(token);
-    verificaciones.labels('ok').inc();
-    res.set('X-User-Id', payload.sub);
-    res.set('X-User-Roles', (payload.roles ?? []).join(','));
-    res.status(204).end();
-  } catch {
-    verificaciones.labels('invalido').inc();
-    throw new HttpError(401, 'TOKEN_INVALIDO', 'Token inválido o vencido');
-  }
-});
 
 authRouter.post('/logout', async (req, res) => {
   const { refreshToken } = refreshSchema.parse(req.body);

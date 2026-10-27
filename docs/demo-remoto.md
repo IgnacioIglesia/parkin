@@ -63,6 +63,22 @@ bash infra/demo-remoto.sh --modo gateway
 
 El script abre el túnel hacia el gateway y te dice qué hacer: poner `VITE_API_URL=<la URL>` (sin barra final) en Vercel → Settings → Environment Variables, y hacer **Redeploy** (la variable se aplica al construir). El gateway acepta pedidos de los sitios `*.vercel.app` (CORS). Como la URL del túnel cambia en cada corrida, estos dos pasos se repiten cada vez: por eso la opción A es más cómoda.
 
+## Cargar más cocheras
+
+Una instalación nueva tiene casi ninguna cochera y la búsqueda queda vacía. Para llenarla con datos de demo:
+
+```bash
+node scripts/sembrar-cocheras.mjs                 # 40 cocheras
+node scripts/sembrar-cocheras.mjs --cantidad 80   # hasta 200
+node scripts/sembrar-cocheras.mjs --borrar        # las elimina
+```
+
+Con el sistema levantado, crea cocheras en los 10 barrios que ofrece el buscador (Pocitos, Punta Carretas, Parque Rodó, Cordón, Centro, Ciudad Vieja, Tres Cruces, Buceo, Malvín y Carrasco), con tipos de vehículo, precios y horarios variados (algunas 24 horas, otras solo de oficina o solo de noche), usando la misma API que usa la web. Se puede correr varias veces: no duplica, y si pedís más cantidad solo crea las que faltan.
+
+Las cuentas de los propietarios de demo son `propietario-demo-1@demo.parkin`, `propietario-demo-2@demo.parkin`… con la contraseña `demo-parkin-2026`. Opciones: `--url` (por defecto `http://localhost:8080`) y `--prefijo` (para tener varios juegos de datos separados). Para sembrar en un sistema público, `--url https://<tu-túnel>.trycloudflare.com`.
+
+Con 40 cocheras, la búsqueda de la web (radio de 1500 m) encuentra entre 3 y 10 por barrio, según el horario; de madrugada, menos, porque algunas no abren de noche.
+
 ## Probar el pago
 
 1. Registrate como propietario y publicá una cochera (o usá una que ya exista), y desde otro usuario (o navegador) registrate como conductor.

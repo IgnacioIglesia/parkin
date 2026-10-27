@@ -41,9 +41,3 @@ export const refrescos = new client.Counter({
   registers,
 });
 
-export const verificaciones = new client.Counter({
-  name: 'usuarios_verificaciones_total',
-  help: 'Verificaciones de JWT pedidas por el gateway: ok, anonimo o invalido',
-  labelNames: ['resultado'],
-  registers,
-});
