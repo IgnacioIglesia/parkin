@@ -5,6 +5,8 @@ import { config } from './config.js';
 export const logger = pino({
   level: config.logLevel,
   base: { servicio: 'usuarios' },
+  // Mismo nombre de campo que Cocheras y Reservas, para buscar igual en Loki.
+  messageKey: 'mensaje',
   timestamp: pino.stdTimeFunctions.isoTime,
   formatters: { level: (label) => ({ nivel: label }) },
   redact: {
