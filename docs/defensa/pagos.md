@@ -1,154 +1,144 @@
-# Defensa: comunicación, saga y Pagos
+# Defensa: Pagos, la saga y la comunicación
 
-Guía para quien defiende esta parte: qué decir en cada diapositiva, qué mostrar y qué preguntas esperar. Las respuestas salen de lo que el sistema hace hoy. Lo que no está resuelto se dice sin rodeos, porque una respuesta honesta sobre un límite vale más que una floja sobre algo que no se probó.
+Guía para quien defiende esta parte: qué explicar, qué mostrar y qué preguntas esperar. Las respuestas salen de lo que el sistema hace hoy (`docs/secciones/pagos.md`, `docs/documento-final/04-comunicacion.md` y `docs/contratos.md`). Lo que no está resuelto se dice sin rodeos: una respuesta honesta sobre un límite vale más que una floja sobre algo que no se probó.
 
-El detalle está en el capítulo `docs/documento-final/04-comunicacion.md` y en las secciones `docs/secciones/pagos.md` y `docs/secciones/gateway.md`.
+> Borrador escrito por Ignacio a pedido de Romina, que no llegaba a tiempo. **Romina: leelo en voz alta, cambiá lo que no suene a vos y verificá cada dato contra tu código antes de usarlo.**
 
-## Las cuatro diapositivas (4:45 en total)
+Esta parte cubre las diapositivas 6 (comunicación), 11 (la saga), 12 (Pagos: no cobrar dos veces) y 16 (conclusión) del `guion-general.md`.
 
-### 6. Comunicación: cuatro mecanismos y por qué (1:30)
+## En tres minutos
 
-1. **Abrir con la regla:** «Síncrono cuando el usuario necesita la respuesta ya; asíncrono cuando no».
-2. **REST** con Usuarios, Reservas y Pagos: operaciones simples que se monitorean por código HTTP. `POST /reservas` y `POST /pagos` llevan `Idempotency-Key`, porque POST no es idempotente.
-3. **GraphQL** con Cocheras: el mapa pide 5 campos de muchas cocheras y la ficha muchos de una. Cada pantalla pide lo que dibuja. DataLoader contra el N+1 y profundidad máxima 5.
-4. **RabbitMQ** entre Reservas, Pagos y Cocheras: si un servicio cae, los mensajes lo esperan en su cola.
-5. **WebSocket** de Pagos a la web: la confirmación llega apenas ocurre. La pantalla igual consulta cada 5 segundos como respaldo.
-6. **Pase:** «Martina les cuenta cómo se identifica quien hace cada uno de estos pedidos».
+1. **Cuatro formas de comunicación, cada una por un motivo.** REST para operaciones simples; GraphQL para Cocheras, donde cada pantalla pide datos distintos; RabbitMQ entre servicios, para que si uno cae los mensajes esperen; y WebSocket para que el servidor avise la confirmación sin que el cliente pregunte. La regla es: **síncrono cuando el usuario necesita la respuesta ya** (el precio para reservar) **y asíncrono cuando no** (confirmar el pago).
+2. **Reservar y pagar ocurre en servicios distintos, con bases distintas**, así que no hay una transacción que abarque los dos. Se resuelve con una **saga coreografiada**: cada paso es una transacción local que publica un evento, y si algo falla se compensa. Pago rechazado, se cancela la reserva y se libera la franja. Cobro tardío, se reembolsa.
+3. **El riesgo de Pagos es el espejo de la doble reserva: cobrar dos veces.** Se evita con un pago vivo por reserva (un bloqueo más un índice único parcial), una clave de idempotencia, un webhook firmado con HMAC-SHA256 que solo cambia el estado una vez, y reembolso automático si se cobra algo que ya no corresponde.
+4. **Nada se pierde si algo cae.** El evento se guarda en la misma transacción que el cambio de estado (*outbox*) y se publica con confirmación; los consumidores son idempotentes; lo que falla 3 veces va a una cola de mensajes fallidos.
 
-### 11. La saga de reserva y pago (1:30)
+**Tiempos del guion general:** comunicación 1:30, saga 1:30, Pagos 1:00, conclusión 0:45.
 
-1. **El problema:** reservar y pagar ocurre en dos servicios con bases distintas. No hay una transacción que abarque a los dos.
-2. **Saga coreografiada:** cada paso es una transacción local que publica un evento, sin un coordinador central. Reservas crea la reserva `PENDIENTE_PAGO` y publica `reserva.creada`. Pagos cobra y publica `pago.aprobado`. Reservas confirma y publica `reserva.confirmada`.
-3. **Compensaciones:** si el pago se rechaza o pasan 10 minutos, la reserva se cancela o expira y la franja se libera. Si se cobró algo que ya no corresponde, Pagos reembolsa.
-4. **Outbox:** el evento se guarda en la misma transacción que el cambio. No hay cambio sin evento ni evento sin cambio.
-5. **Idempotencia:** la entrega es *at-least-once*; cada consumidor descarta el `eventId` repetido.
+## Qué mostrar (y cómo)
 
-### 12. Pagos: no cobrar dos veces (1:00)
+| Qué | Cómo |
+|---|---|
+| El flujo completo de un pago | `http://localhost:8081`: reservar, **Pagá**, **Aprobar pago** en la pasarela, y ver cómo la reserva pasa a confirmada sola, por WebSocket |
+| El rechazo y la compensación | Lo mismo, pero con **Rechazar**: llega el aviso de pago rechazado y la franja queda libre |
+| La saga en una sola traza | Jaeger (`:16686`), buscar el servicio `pagos`: se ven Pagos, Reservas y Cocheras en una misma traza (captura `pago-06`) |
+| Que nada se pierde si Pagos cae (opcional) | `docker compose stop pagos`, reservar desde la web (funciona), `docker compose start pagos` y pagar |
+| Las colas de RabbitMQ | `http://localhost:15672` (guest / guest), pestaña **Queues**: `pagos.reserva-eventos`, `reservas.pago-eventos` y `cocheras.dlq` |
 
-1. **Un solo pago vivo por reserva:** un lock por reserva en PostgreSQL más un índice único parcial como red de seguridad. Probado: 20 «Pagar» simultáneos crean un solo pago.
-2. **El monto no lo manda el cliente:** se cobra el que calculó Reservas, que llega en el evento.
-3. **El webhook está firmado** con HMAC-SHA256 sobre el cuerpo exacto. Un aviso sin firma, adulterado o repetido no cambia nada.
-4. **Reembolso automático:** si la pasarela cobra una reserva que ya venció o se canceló, o se cancela una ya pagada. Si la pasarela falla al devolver, se reintenta cada 30 segundos sin devolver dos veces.
-
-### 16. Conclusión y trabajo futuro (0:45)
-
-1. **Lo que se logró:** cuatro funcionalidades de punta a punta, cuatro formas de comunicación y los tres pilares de observabilidad. La garantía central se probó: 20 conductores a la vez, entra uno.
-2. **Lo que aprendimos:** la consistencia se pone donde todos coinciden (la base de datos), y sin transacciones entre servicios hay que diseñar cada falla.
-3. **Límites y trabajo futuro:** probar varias réplicas y un orquestador, una pasarela real (Mercado Pago, aislada en un solo archivo), y una política de cancelación con plazos.
-4. **Pase:** «Preguntas».
-
-## Qué mostrar (demo 5, opcional, si sobra tiempo)
-
-| Paso | Comando o acción | Qué decir |
-|---|---|---|
-| 1 | `docker compose stop pagos` | «Apagamos Pagos» |
-| 2 | Reservar desde la web | «Se puede reservar igual: `reserva.creada` queda esperando en la cola de Pagos» |
-| 3 | `docker compose start pagos` | «Pagos vuelve y procesa lo pendiente» |
-| 4 | «Pagá» y Aprobar en la pasarela | «Nada se perdió: la confirmación llega por WebSocket» |
-
-Si no hay tiempo de demo, la captura `pago-06-jaeger-saga-del-pago.png` muestra la saga completa en una sola traza: 3 servicios y 46 spans.
+Antes de la defensa: `docker compose ps` con todo `healthy`, y `node scripts/sembrar-cocheras.mjs` para que la búsqueda tenga datos. Las capturas del flujo están en `docs/capturas/pago-01` a `pago-06`.
 
 ## Preguntas probables
 
 ### Comunicación
 
-**¿Por qué usaron cuatro formas de comunicación y no una sola?**
-Porque cada una resuelve un caso distinto. REST para operaciones simples; GraphQL donde las pantallas piden datos muy distintos de la misma entidad; RabbitMQ para coordinar servicios sin que tengan que estar vivos a la vez; WebSocket para que el servidor avise sin que el cliente pregunte. Usar una sola habría obligado a forzarla en los casos donde no encaja.
+**¿Por qué usan cuatro formas de comunicación y no solo una?**
+Porque cada una responde a un caso distinto. REST es simple y se monitorea por código HTTP. GraphQL le da a cada pantalla de Cocheras exactamente los campos que necesita. RabbitMQ desacopla a los servicios en el tiempo. WebSocket empuja avisos. Usar solo REST obligaría a los servicios a esperarse entre sí y al navegador a preguntar todo el tiempo.
 
-**¿Por qué GraphQL solo en Cocheras?**
-Es el único servicio con vistas que necesitan datos muy distintos de la misma entidad: el mapa, la ficha y el panel del propietario. Con REST habría que traer de más, hacer varias llamadas o crear un endpoint por pantalla. Reservas y Pagos son operaciones simples, y REST es más fácil de cachear y de monitorear por código HTTP.
+**¿Cuándo usan síncrono y cuándo asíncrono?**
+Síncrono cuando quien llama necesita la respuesta para seguir: Reservas le pregunta a Cocheras el precio y el propietario por GraphQL, porque el conductor espera. Asíncrono cuando no hace falta esperar: confirmar un pago viaja como evento. Lo asíncrono además amortigua picos y permite sumar consumidores.
 
-**¿Qué problemas trae GraphQL y cómo los resolvieron?**
-El N+1 (DataLoader, con un test que cuenta las consultas), las queries anidadas maliciosas (profundidad máxima 5), los errores que vuelven con HTTP 200 (se mide cada operación con su resultado y hay una alerta) y que no se puede cachear por HTTP (la caché está en Redis, en el servidor).
-
-**¿Cuándo síncrono y cuándo asíncrono?**
-Síncrono cuando el usuario necesita la respuesta ya: para crear la reserva hace falta el precio, así que Reservas se lo pide a Cocheras y espera, con un límite de 3 segundos. Asíncrono cuando no: la confirmación del pago puede tardar unos segundos y no hace falta que Reservas y Pagos estén vivos al mismo tiempo.
-
-**¿Por qué no se comunican por una base de datos compartida?**
-Porque acopla los esquemas (un cambio en una tabla rompe a otro servicio) y una base caída tira abajo a todos. Cada servicio es dueño de sus datos y los demás se enteran por eventos o por su API. Pagos, por ejemplo, guarda su propia copia de la reserva a partir de los eventos, y puede cobrar aunque Reservas esté caído.
+**¿Por qué no comunicaron los servicios a través de una base de datos compartida?**
+Porque acopla los esquemas: un cambio en una tabla rompe a otro servicio, y una base caída tira abajo a todos. Con una base por servicio, cada uno es dueño de sus datos y los demás se enteran por eventos o por su API. Pagos, por ejemplo, nunca consulta a Reservas: guarda una copia local de lo que necesita a partir de los eventos.
 
 **¿Por qué RabbitMQ y no Kafka?**
-Necesitamos repartir cada evento a las colas interesadas, con confirmación por mensaje, reintentos y una cola de fallidos. RabbitMQ lo trae incorporado. Kafka está pensado para un registro histórico y volúmenes muy altos, que no es nuestro caso.
+Necesitamos repartir cada evento a las colas que lo escuchan, con confirmación por mensaje, reintentos y una cola de mensajes fallidos. No necesitamos un historial de eventos ni un volumen alto, y RabbitMQ es más simple de operar. Kafka sería razonable si quisiéramos reprocesar el historial.
 
-**¿Qué tipo de exchange usan y por qué?**
-*Topic*. Cada cola se suscribe solo a las claves que le interesan, y un mismo evento llega a varias: `reserva.confirmada` va a Pagos y a Cocheras. Un servicio nuevo, por ejemplo uno de calificaciones, se suscribe sin tocar a quien publica.
+**¿Por qué WebSocket y no consultar cada tanto (polling)?**
+Con polling, el aviso tarda lo que tarde la próxima consulta y cada pestaña carga al servidor. Con WebSocket el aviso llega en el momento. Igual dejamos una consulta cada 5 segundos como respaldo mientras la reserva espera el pago, porque el aviso es *best effort*: la fuente de verdad es la reserva.
 
-**¿Por qué WebSocket y no polling? ¿Y SSE?**
-Con polling el aviso tarda lo que tarde la próxima consulta, y cada pestaña le pega al servidor aunque no haya novedades. SSE alcanzaría para avisos en un solo sentido, pero Socket.IO trae reconexión, salas por usuario y el adaptador para varias réplicas. Igual dejamos una consulta cada 5 segundos como respaldo.
+**¿Y si el aviso por WebSocket se pierde, o el usuario estaba desconectado?**
+No se pierde información: la reserva se consulta por REST y la pantalla la actualiza igual con esa consulta periódica.
 
-**¿Cómo se autentica el WebSocket si no lleva header `Authorization`?**
-El JWT va en el *handshake* (`auth.token`) y Pagos lo verifica con la clave pública al conectar. Sin token válido, la conexión se rechaza con `TOKEN_INVALIDO`, y la web refresca el token y reconecta. Cada conexión entra a la sala de su usuario, así que nadie recibe avisos ajenos.
+**¿Cómo se autentica un WebSocket?**
+El navegador no puede mandar headers personalizados en un WebSocket, así que el token viaja en el *handshake* y Pagos lo verifica con la clave pública. Un token falso se rechaza con `TOKEN_INVALIDO`, y el front refresca el token y reconecta. Además, cada usuario entra a su sala y solo recibe avisos propios.
 
-**¿Qué pasa si el aviso por WebSocket se pierde?**
-No se pierde información: el aviso es de mejor esfuerzo. La fuente de verdad es `GET /reservas/{id}`, que la pantalla consulta cada 5 segundos mientras espera el pago.
+### La saga
 
-**¿Cómo funciona el WebSocket con varias réplicas de Pagos?**
-El adaptador de Redis de Socket.IO reparte cada aviso entre las réplicas, para que llegue aunque el cliente esté conectado a otra. **Solo lo probamos con una réplica.** Si Redis no responde al arrancar, Pagos arranca igual sin el adaptador: con una réplica no cambia nada.
+**¿Qué es una saga y por qué la necesitan?**
+Reservar y pagar ocurren en servicios con bases distintas, así que no existe una transacción que los abarque. Una saga hace la operación como una cadena de pasos locales, cada uno con su evento, y cada paso tiene una **compensación** por si algo falla más adelante.
 
-### Saga
+**¿Es coreografiada u orquestada? ¿Por qué?**
+Coreografiada: no hay un director central, cada servicio reacciona a los eventos que le interesan. Lo elegimos porque es más simple para tres servicios y no agrega un punto único de falla. El costo es que el flujo completo no está escrito en un solo lugar; por eso lo documentamos en un diagrama y se puede seguir en Jaeger con una sola traza.
 
-**¿Por qué una saga y no un commit en dos fases?**
-El commit en dos fases bloquea los recursos de todos mientras espera al coordinador, y si el coordinador cae los deja trabados. Con la saga, cada paso es una transacción local que termina enseguida, y si algo falla se compensa. El costo es la consistencia eventual: durante unos segundos la reserva está `PENDIENTE_PAGO` aunque el pago ya se aprobó.
+**¿Qué compensaciones tienen?**
+Pago rechazado: Reservas cancela la reserva y libera la franja. Pasan 10 minutos sin pagar: Reservas la expira y Pagos anula el pago pendiente. Se cobra algo que ya no corresponde: Pagos reembolsa.
 
-**¿Por qué coreografiada y no orquestada?**
-Son tres pasos y dos servicios principales: un orquestador sería una pieza más que operar y un punto de falla. Cada servicio sabe qué hacer cuando le llega un evento. Si el flujo creciera mucho (más pasos, más servicios), un orquestador haría más fácil seguirlo; hoy lo resolvemos con las trazas, que muestran la saga entera en Jaeger.
+**¿Qué pasa si el usuario paga justo cuando la reserva venció?**
+Es el cobro tardío. La pasarela cobra, pero cuando el aviso llega la reserva ya está cerrada: el pago queda rechazado con el motivo `reserva_no_vigente`, se pide el reembolso y la reserva no revive. Se probó pagando una reserva ya cancelada: terminó con el reembolso hecho y la reserva seguía cancelada.
 
-**¿Qué es el outbox y qué problema resuelve?**
-Si el servicio guardara el cambio y después publicara, una caída entre los dos pasos dejaría un pago aprobado sin evento (la reserva nunca se confirma) o un evento de algo que se revirtió. Con el outbox el evento se guarda en la misma transacción, y un publicador aparte lo envía con *publisher confirms*. Solo se marca como enviado cuando el broker lo confirma. Si RabbitMQ está caído, el evento espera, y la métrica `pagos_outbox_pendientes` lo muestra.
+**¿Por qué reembolso automático y no dejar que el usuario lo pida?**
+Porque el usuario no sabe que su pago llegó tarde: la pasarela le mostró «aprobado». Dejarlo con la plata cobrada y sin reserva es el peor resultado, y evitarlo no cuesta casi nada.
 
-**¿Y si el mismo evento llega dos veces?**
-Puede pasar, porque la entrega es *at-least-once*. Cada consumidor guarda el `eventId` en la misma transacción que aplica el cambio y descarta los repetidos. Está probado con el mismo evento 10 veces en paralelo: se aplica una vez.
+**¿Puede la reserva volver a un estado anterior si llega un evento atrasado?**
+No. Cada estado tiene un orden (pendiente, confirmada, cancelada o expirada, finalizada) y la copia local solo se actualiza si el estado nuevo es posterior. Un evento atrasado o repetido no puede revivir una reserva cancelada.
 
-**¿Y si los eventos llegan fuera de orden?**
-Ningún consumidor confía en la hora del evento, porque los relojes de distintas máquinas no coinciden. Cada estado tiene un orden y nunca retrocede: una `reserva.confirmada` atrasada no revive una reserva cancelada. Está probado.
+### No cobrar dos veces
 
-**¿Qué pasa con un mensaje que no se puede procesar nunca?**
-Las colas tienen un límite de 3 entregas. Lo que lo supera, o es inválido desde el principio, va a `cocheras.dlq`, y una alerta avisa. Así no se reintenta para siempre ni frena a los demás.
+**¿Cómo evitan cobrar dos veces la misma reserva?**
+Con varias capas. Dentro de la transacción de `POST /pagos` se toman dos bloqueos de aviso en PostgreSQL (uno por la `Idempotency-Key` y otro por la reserva), así los pedidos simultáneos hacen fila: el primero crea el pago y los demás devuelven ese mismo pago con la misma dirección de pago. Como red de seguridad, un índice único parcial impide dos pagos vivos por reserva aunque fallara el bloqueo. Se probó con 10 pedidos simultáneos con claves distintas: un solo pago, un `201` y nueve `200`.
 
-**¿Qué pasa si el pago llega justo cuando la reserva vence?**
-El bloqueo de fila en Reservas hace que termine `CONFIRMADA` o `EXPIRADA`, nunca las dos. Si gana la expiración, Pagos recibe `reserva.expirada`, y si la pasarela ya había cobrado, reembolsa. Hay pruebas de esa carrera en los dos servicios.
+**¿Qué pasa si el usuario toca dos veces «Pagar» o abre dos pestañas?**
+Devuelve el mismo pago con la misma `checkoutUrl`, en lugar de un error. Es lo que espera la web cuando alguien cerró la pasarela y vuelve a intentar.
 
-### Pagos
+**¿Quién decide el monto?**
+Nadie del lado del cliente. El cliente manda solo el `reservaId`; el monto lo calculó Reservas (precio por hora por duración) y llega en el evento `reserva.creada`.
 
-**¿Cómo garantizan que no se cobra dos veces?**
-En tres capas:
-1. **La misma `Idempotency-Key`** devuelve el mismo pago.
-2. **Con otra clave**, un lock por reserva (`pg_advisory_xact_lock`) hace que los pedidos simultáneos de la misma reserva hagan fila. Si ya hay un pago pendiente, se devuelve ese mismo, con su link de pago.
-3. **Un índice único parcial** impide dos pagos vivos de la misma reserva, aunque el lock fallara.
+**¿Cómo saben que el webhook lo mandó la pasarela y no un atacante?**
+La pasarela firma el cuerpo con HMAC-SHA256 y un secreto compartido. Pagos lee el cuerpo crudo, antes de parsearlo, porque reformatearlo cambiaría la firma, y compara en tiempo constante. Sin firma válida responde `401` y no toca el pago. Aunque la firma sea válida, el aviso tiene que coincidir en monto, moneda y orden con el pago registrado.
 
-Probado: 20 pedidos simultáneos dan un solo pago y una sola orden en la pasarela.
+**¿Y si la pasarela manda el mismo aviso dos veces?**
+Las pasarelas reintentan. El pago se lee con bloqueo de fila y solo el primer aviso de un pago pendiente cambia su estado; los siguientes se responden con `200` y resultado `repetido`, para que dejen de reintentar.
 
-**¿Qué impide que alguien llame al webhook y apruebe su propio pago?**
-La firma HMAC-SHA256 del cuerpo, con un secreto que solo conocen Pagos y la pasarela. Se calcula sobre el cuerpo exacto que llegó, no sobre el JSON ya interpretado, y se compara en tiempo constante. Sin firma, o con el cuerpo adulterado, la respuesta es `401` y no cambia nada. Además se verifica que el monto, la moneda y la orden coincidan con el pago.
+**¿Por qué la orden en la pasarela se crea fuera de la transacción?**
+Una llamada HTTP no puede quedar reteniendo bloqueos de la base. Si la pasarela no responde, se anula solo ese intento (`503`, sin avisar a Reservas) y la reserva se puede volver a pagar.
 
-**¿Y si la pasarela manda el mismo aviso varias veces?**
-El primero cambia el estado y los demás responden `200` sin tocar nada ni publicar otra vez. Un aviso contradictorio posterior también se ignora: manda el primero.
+### Mensajería y tolerancia a fallos
 
-**¿Cuándo reembolsan?**
-Cuando la pasarela cobra una reserva que ya venció o se canceló (pago tardío), y cuando se cancela una reserva ya pagada. Si la pasarela falla al reembolsar, el reembolso queda pendiente y se reintenta cada 30 segundos, sin devolver dos veces.
+**¿Qué pasa si Pagos cae? ¿Y si cae RabbitMQ?**
+Si cae Pagos, Reservas sigue creando reservas y los eventos esperan en su cola durable; al volver, Pagos los procesa. Si cae RabbitMQ, los eventos quedan en el *outbox* y salen cuando vuelve; Pagos y Reservas se reconectan solos. Lo probamos apagando Pagos, reservando y encendiéndolo.
 
-**¿Por qué el monto no lo manda el cliente?**
-Porque se podría falsificar. Lo calcula Reservas (precio por hora × duración) con el precio que le da Cocheras, y llega a Pagos en el evento `reserva.creada`.
+**¿Qué es el outbox y por qué lo usan?**
+El evento se guarda en la misma transacción que el cambio de estado, en una tabla aparte, y otro proceso lo publica con confirmación del broker. Evita que el pago quede aprobado y el evento se pierda si algo falla en el medio.
 
-**¿Qué pasa si la pasarela no responde?**
-Después de 5 segundos, Pagos responde `503 PASARELA_NO_DISPONIBLE`, anula ese intento sin avisar a Reservas y la reserva se puede volver a pagar mientras no venza.
+**¿Se puede procesar dos veces un evento? ¿Y perderlo?**
+Perderlo, no: outbox, confirmaciones, ACK manual y colas durables. Repetirse, sí: la entrega es *at-least-once*. Por eso cada consumidor registra el `eventId` que procesó y descarta los repetidos, en la misma transacción que aplica el cambio.
 
-**¿Por qué la pasarela es simulada?**
-Para demostrar el flujo completo sin mover dinero real. Imita a Mercado Pago: orden, página de pago y webhook firmado. Está aislada en un solo archivo de Pagos, así que cambiarla por la real no toca la saga. Guarda las órdenes en memoria, y quien conozca el id de una orden puede resolverla desde la página: es aceptable para una simulación.
+**¿Qué es la Dead Letter Queue?**
+La cola de mensajes que fallaron 3 veces, o que están rotos y nunca se podrán procesar. No se pierden ni se reintentan para siempre: quedan para inspeccionarlos a mano, y hay una alerta cuando aparece alguno.
 
-**¿Cómo siguen un pago en las trazas si el webhook llega sin contexto?**
-Pagos guarda el `traceId` al crear el pago, y cuando llega el aviso de la pasarela continúa esa misma traza. En Jaeger se ve el «Pagar» de punta a punta: Pagos, Reservas y Cocheras. Los spans que cuelgan de un evento muestran el aviso «invalid parent span», porque en el evento solo viaja el `traceId`; quedan en la traza correcta.
+**¿Pagos funciona si Reservas está caída?**
+Sí, para pagar una reserva que ya existe, porque tiene una copia local armada con los eventos. Lo que no puede es crear reservas nuevas.
 
-### Gateway (por si preguntan, aunque lo presenta Martina)
+### Seguridad y despliegue
 
-**¿Por qué el gateway verifica el JWT él mismo?**
-Para no llamar a Usuarios en cada request ni depender de que esté vivo. Verifica la firma RS256 con la clave pública, con njs, porque el NGINX de código abierto no lo trae. La primera versión consultaba a Usuarios con `auth_request`; ese endpoint se borró el 26/10.
+**¿Por qué Pagos vuelve a verificar el token si el gateway ya lo hace?**
+Defensa en profundidad, y además lo necesita igual: el WebSocket manda el token en el handshake y no en un header, así que no pasa por el mismo camino.
 
-**¿Qué ve el gateway en la observabilidad?**
-Un log JSON por request con `traceId` y `usuarioId`, el log de errores con nivel en Loki, y sus contadores en Prometheus a través de `nginx-prometheus-exporter`, con la alerta `GatewayCaido`.
+**¿Qué hay que cambiar para usar una pasarela real?**
+Solo `pagos/src/pasarela.js`, que crea la orden y reembolsa. Las rutas, el webhook, la saga y los reembolsos no cambian. Con una real, el resultado lo decide y lo firma el proveedor.
+
+**¿Cómo escala Pagos?**
+Es un servicio sin estado. El adaptador de Redis de Socket.IO hace que un aviso llegue al cliente aunque esté conectado a otra réplica, y el publicador del outbox usa `SKIP LOCKED` para que varias réplicas no se pisen. **Pero solo lo probamos con una réplica.**
+
+**¿Cómo lo probaron?**
+60 pruebas automáticas contra PostgreSQL real (pagos concurrentes, firma, webhook repetido y adulterado, eventos fuera de orden, outbox y WebSocket), y una prueba de punta a punta por el gateway con todos los casos de la tabla de `pagos.md`.
+
+## Límites (decilos antes de que pregunten)
+
+- **La pasarela es simulada.** No se mueve dinero real, y guarda las órdenes en memoria.
+- **Una sola réplica probada.** El diseño permite varias, pero no lo medimos.
+- **Una sola moneda:** todo se cobra en pesos uruguayos, como lo calcula Reservas.
+- **El estado «finalizada» está previsto en Pagos**, pero Reservas todavía no publica `reserva.finalizada`, así que hoy Pagos nunca lo recibe.
+- **El contexto de traza viaja solo como `traceId` en los eventos**, y el gateway no figura como un tramo; en Jaeger algunos tramos muestran un aviso de padre desconocido.
+- **La cancelación todavía no tiene plazos:** se reembolsa completo.
+
+## Conclusión (diapositiva 16, 45 segundos)
+
+parkIN muestra que las características de los sistemas distribuidos se vuelven concretas cuando hay un problema real detrás: **la concurrencia** es que una sola reserva gane; **la tolerancia a fallos** es que un pago no se pierda si cae un servicio; **la confidencialidad** es que nadie más que quien reservó sepa dónde vive el propietario. El sistema completo se levanta con un solo comando y cada una de esas garantías se puede demostrar en vivo. Como trabajo futuro: probar varias réplicas, una pasarela real y una política de cancelación con plazos.
 
 ## Si algo falla durante la defensa
 
-- **Pagos no responde:** `docker compose ps`; si figura `Exited`, `docker compose up -d pagos`. Mientras tanto, seguir con la captura `pago-06`.
-- **La confirmación no llega por WebSocket:** esperar 5 segundos (la pantalla consulta sola) y decirlo: «el WebSocket es el camino rápido; la consulta es el respaldo».
-- **La pasarela no abre:** mostrar las capturas `pago-01` a `pago-05` en orden.
+- **El sistema no responde:** `docker compose ps`; si algo figura como `Created` o `Exited` (salvo `jwt-claves`), `docker compose up -d`.
+- **No hay datos para mostrar:** `node scripts/sembrar-cocheras.mjs`.
+- **La pasarela o el WebSocket no andan:** mostrar las capturas `pago-01` a `pago-06` de `docs/capturas/` y explicar el flujo con el diagrama de `docs/secciones/pagos.md`.
+- **Se cae el túnel:** seguir en `http://localhost:8081`.
