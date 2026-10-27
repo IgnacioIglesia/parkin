@@ -64,7 +64,7 @@ CREATE TABLE franja_disponible (
 );
 
 CREATE TABLE acceso_direccion (reserva_id UUID PRIMARY KEY, cochera_id UUID,
-                               conductor_id UUID, revocado BOOLEAN);
+                               conductor_id UUID, hasta TIMESTAMPTZ, revocado BOOLEAN);
 CREATE TABLE evento_procesado (event_id UUID PRIMARY KEY, procesado_en TIMESTAMPTZ);
 ```
 
@@ -99,11 +99,11 @@ flowchart TD
 La dirección de una cochera suele ser la casa del propietario. Por eso hay dos ubicaciones:
 
 - **Aproximada**, visible para todos. Se calcula una sola vez, al crear la cochera, como un punto al azar a 100-300 m de la real, y queda fija. Si cambiara en cada consulta, promediando muchas búsquedas se podría reconstruir el punto real. Solo se recalcula si el dueño cambia la ubicación.
-- **Exacta** (`direccionExacta` y `ubicacion`), visible solo para el dueño y para el conductor con una reserva **confirmada** de esa cochera. Para cualquier otro llega `null`.
+- **Exacta** (`direccionExacta` y `ubicacion`), visible solo para el dueño y para el conductor con una reserva **confirmada** de esa cochera, **hasta que termina la franja reservada**. Para cualquier otro, o cuando la reserva ya terminó, llega `null`.
 
 La búsqueda filtra **y ordena** por la ubicación aproximada, y nunca por la real. Si filtrara por la real, alguien podría ir achicando el radio y triangular el punto exacto.
 
-**Cómo sabe Cocheras quién tiene una reserva confirmada.** Cocheras no consulta a Reservas en cada request: escucha `reserva.confirmada` y guarda el acceso en `acceso_direccion`. Con `reserva.cancelada`, lo revoca.
+**Cómo sabe Cocheras quién tiene una reserva confirmada.** Cocheras no consulta a Reservas en cada request: escucha `reserva.confirmada` y guarda el acceso en `acceso_direccion`, junto con el fin de la franja (`hasta`, que viene en el evento). Con `reserva.cancelada`, lo revoca. Cuando la franja termina, el acceso vence solo: la consulta compara `hasta` con la hora de la base, así que no hace falta que Reservas publique un evento de fin.
 
 ## 6. Eventos
 
@@ -158,7 +158,7 @@ Detalle completo en [`observabilidad.md`](../observabilidad.md). En resumen:
 
 ## 11. Pruebas
 
-49 tests. 20 son unitarios y corren sin infraestructura. Los otros 29 corren contra PostGIS, RabbitMQ y Redis reales, y se activan con variables de entorno. Los más relevantes:
+51 tests. 20 son unitarios y corren sin infraestructura. Los otros 31 corren contra PostGIS, RabbitMQ y Redis reales, y se activan con variables de entorno. Los más relevantes:
 
 | Prueba | Resultado esperado |
 |---|---|
@@ -167,7 +167,7 @@ Detalle completo en [`observabilidad.md`](../observabilidad.md). En resumen:
 | Disponibilidad en hora local | Una franja de 14 a 15 en Montevideo coincide con 17 a 18 UTC, no con 14 a 15 UTC; cruzar la medianoche une franjas de dos días |
 | Reservas informa ocupación | La cochera ocupada no aparece |
 | Reservas no responde | La búsqueda sigue funcionando |
-| Dirección y ubicación exactas | `null` para anónimos y otros conductores; visibles para el dueño y para el conductor con reserva confirmada |
+| Dirección y ubicación exactas | `null` para anónimos y otros conductores; visibles para el dueño y para el conductor con reserva confirmada, y otra vez `null` cuando su reserva terminó |
 | DataLoader | Una búsqueda que pide la disponibilidad de 5 cocheras hace una sola consulta de franjas |
 | Caché | La segunda búsqueda igual no consulta a Reservas; una edición la invalida |
 | Evento repetido | Se aplica una sola vez |

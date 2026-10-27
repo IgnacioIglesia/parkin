@@ -66,7 +66,7 @@ describe('Consumidor de RabbitMQ', { skip: faltan && 'Definir TEST_DATABASE_URL,
       eventId: randomUUID(),
       tipo: 'reserva.confirmada',
       traceId: '4bf92f3577b34da6a3ce929d0e0e4736',
-      datos: { reservaId, cocheraId: randomUUID(), conductorId: randomUUID() },
+      datos: { reservaId, cocheraId: randomUUID(), conductorId: randomUUID(), hasta: new Date(Date.now() + 3_600_000).toISOString() },
     });
     await hasta(
       async () => (await pool.query('SELECT 1 FROM acceso_direccion WHERE reserva_id = $1', [reservaId])).rowCount === 1,

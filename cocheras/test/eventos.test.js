@@ -13,7 +13,12 @@ function evento(tipo, datos) {
     tipo,
     ocurridoEn: new Date().toISOString(),
     traceId: '4bf92f3577b34da6a3ce929d0e0e4736',
-    datos: { estado: 'CONFIRMADA', monto: 180, moneda: 'UYU', ...datos },
+    datos: {
+      estado: 'CONFIRMADA', monto: 180, moneda: 'UYU',
+      desde: new Date(Date.now() + 3_600_000).toISOString(),
+      hasta: new Date(Date.now() + 7_200_000).toISOString(),
+      ...datos,
+    },
   };
 }
 
@@ -47,6 +52,14 @@ describe('procesarEvento', { skip: !TEST_DB && 'Definir TEST_DATABASE_URL' }, ()
     assert.equal(invalidaciones, 1);
   });
 
+  test('reserva.confirmada guarda el fin de la franja', async () => {
+    const r = reserva();
+    const hasta = '2026-11-20T16:00:00.000Z';
+    await procesarEvento(pool, cache, evento('reserva.confirmada', { ...r, hasta }));
+    const { rows } = await pool.query('SELECT hasta FROM acceso_direccion WHERE reserva_id = $1', [r.reservaId]);
+    assert.equal(rows[0].hasta.toISOString(), hasta);
+  });
+
   test('un evento repetido se descarta sin volver a aplicarse', async () => {
     const e = evento('reserva.confirmada', reserva());
     await procesarEvento(pool, cache, e);
@@ -72,6 +85,8 @@ describe('procesarEvento', { skip: !TEST_DB && 'Definir TEST_DATABASE_URL' }, ()
     for (const malo of [
       { ...evento('reserva.confirmada', reserva()), eventId: 'x' },
       evento('reserva.confirmada', { ...reserva(), cocheraId: undefined }),
+      evento('reserva.confirmada', { ...reserva(), hasta: undefined }),
+      evento('reserva.confirmada', { ...reserva(), hasta: 'mañana' }),
       evento('pago.aprobado', reserva()),
       null,
     ]) {
