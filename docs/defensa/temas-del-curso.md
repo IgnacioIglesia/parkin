@@ -434,7 +434,7 @@ Depende de la operación.
 | Reservas | No se reserva; la búsqueda sigue, sin filtrar por ocupación |
 | Pagos | Se sigue reservando; los eventos esperan en la cola. No se puede pagar hasta que vuelva |
 | RabbitMQ | Los eventos esperan en el outbox; se publican cuando vuelve |
-| Redis | La búsqueda va directo a la base (probado). Pagos necesita Redis para arrancar: si se reinicia con Redis caído, no levanta hasta que Redis vuelva. Con Pagos ya levantado, no lo probamos; la reserva igual se confirma y la pantalla lo ve en la consulta cada 5 s |
+| Redis | La búsqueda va directo a la base (probado). Si Pagos arranca sin Redis, espera 5 segundos y sigue sin el adaptador de Socket.IO: con una réplica los avisos llegan igual (probado en Docker). Si Redis vuelve, Pagos no suma el adaptador hasta reiniciarse, lo que solo importa con varias réplicas |
 
 **«¿Qué cambiarían para producción?»**
 - Varias réplicas probadas, con un orquestador.
