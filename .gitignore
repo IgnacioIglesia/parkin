@@ -30,3 +30,6 @@ coverage/
 
 # Claves JWT de desarrollo
 *.pem
+
+# Documento final generado (scripts/documento-final.mjs)
+docs/documento-final/salida/
