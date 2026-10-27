@@ -47,7 +47,7 @@ Cada servicio responde sus errores a su manera (Usuarios `{error}`, Reservas `{d
 
 ## 6. Confidencialidad
 
-La búsqueda y la ficha muestran una zona (círculo de 300 m) alrededor de la ubicación aproximada que entrega Cocheras. La dirección exacta aparece recién con la reserva confirmada, porque Cocheras la devuelve `null` hasta entonces. El navegador nunca recibe la ubicación exacta: el propietario la marca al publicar y la vuelve a marcar si edita los datos.
+La búsqueda y la ficha muestran una zona (círculo de 300 m) alrededor de la ubicación aproximada que entrega Cocheras. La dirección exacta y el punto exacto (`direccionExacta` y `ubicacion`) aparecen recién con la reserva confirmada, porque Cocheras los devuelve `null` hasta entonces; el propietario los ve siempre en sus cocheras. Por eso la ficha dibuja el punto solo a quien tiene derecho a verlo, y el propietario edita su cochera con la ubicación ya marcada.
 
 ## 7. Diseño
 
@@ -59,15 +59,18 @@ La interfaz toma la forma de un **tablero de partidas**. Códigos, precios, hora
 
 ## 8. Pruebas y pendientes
 
-**Probado en navegador contra los servicios reales:**
-1. Una propietaria publica una cochera y define sus horarios.
-2. Un conductor la encuentra en la búsqueda, abre la ficha y reserva: la reserva queda retenida, con la cuenta regresiva.
-3. Otra persona intenta la misma franja y recibe «Esa franja acaba de ser reservada».
-4. La propietaria ve la reserva en «En tus cocheras».
-5. El conductor cancela y la franja se libera: la segunda persona ya puede reservarla.
+**Probado en Chrome contra los servicios reales** (26/10, con `docker compose up --build` desde cero, 40 cocheras sembradas con `scripts/sembrar-cocheras.mjs`). Las capturas están en `docs/capturas/web-*.png`:
 
-También se probó en 390 px de ancho.
+1. Registro con los dos roles y búsqueda: el mapa de Pocitos muestra las cocheras libres de la franja (`web-03`).
+2. Ficha y reserva: la reserva queda **Retenida** con la cuenta regresiva de 10 minutos (`web-04`, `web-05`).
+3. Otra persona, desde otra sesión, intenta la misma franja y recibe «Esa franja acaba de ser reservada» (`web-06`).
+4. **Pago aprobado:** «Pagá» abre la pasarela simulada en otra pestaña; al tocar «Aprobar», sin recargar, la reserva pasa a **Confirmada**, llega el aviso «Tu reserva está confirmada» por WebSocket y aparece la dirección exacta (`web-07`). Tarda alrededor de un segundo.
+5. **Pago rechazado:** otra reserva, «Rechazar» en la pasarela: llega un solo aviso, «El pago fue rechazado», la reserva pasa a **Cancelada** y la pantalla dice que la franja se liberó (`web-08`). Pagos y Reservas mandan dos eventos para ese caso (`pago:rechazado` y `reserva:cancelada`); la web muestra solo el primero.
+6. Mis reservas con los estados de cada una (`web-09`).
+7. Panel del propietario: publicar tocando el mapa, horarios por día y la lista de cocheras (`web-10` a `web-12`). Al editar, la ubicación ya viene marcada y se guarda sin volver a tocar el mapa.
+8. Perfil y la búsqueda en 390 px de ancho (`web-13`, `web-14`).
 
-**Pendiente:**
-- El pago sigue el contrato de Pagos: `POST /api/pagos { reservaId }` con su propia `Idempotency-Key` (reusada si se reintenta), reintento automático ante `404 RESERVA_DESCONOCIDA` (Pagos todavía no recibió `reserva.creada`) y el checkout en otra pestaña, mientras la reserva se actualiza sola al confirmarse. Probado en el navegador contra Pagos real y la pasarela simulada: se reserva, se toca «Pagá», el checkout se abre en otra pestaña, se aprueba y la reserva pasa sola a **CONFIRMADA** (en alrededor de un segundo, con el aviso por WebSocket) mostrando la dirección exacta.
+**Límites:**
 - Los bloqueos de fechas puntuales no están en el contrato GraphQL.
+- El refresh token vive en `localStorage`; una cookie `httpOnly` lo protegería mejor de un XSS (ver la defensa en `docs/defensa/usuarios-y-web.md`).
+- La web no inicia trazas: en Jaeger el recorrido empieza en los servicios.
