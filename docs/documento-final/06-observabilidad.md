@@ -1,6 +1,6 @@
 # Observabilidad
 
-> Borrador para el documento final. La referencia completa (métricas, alertas y cómo sumar un servicio) está en `docs/observabilidad.md`. Las capturas `cocheras-*` todavía no están en `docs/capturas/`: se toman con el sistema levantado y después de correr `node scripts/sembrar-cocheras.mjs` y `CONDUCTORES=20 node scripts/demo.mjs`.
+> Borrador para el documento final. La referencia completa (métricas, alertas y cómo sumar un servicio) está en `docs/observabilidad.md`. Las capturas son del 27/10, con el sistema levantado desde `docker compose up --build`, 40 cocheras de demo (`scripts/sembrar-cocheras.mjs`) y `CONDUCTORES=20 node scripts/demo.mjs`.
 
 La letra pide al menos uno de los pilares de la observabilidad. Implementamos los tres (**logs, métricas y trazas**) y los unimos con un mismo identificador, el `traceId`, para poder pasar de uno a otro.
 
@@ -41,7 +41,7 @@ Con eso, buscar `{servicio=~".+"} |= "<traceId>"` en Loki devuelve el recorrido 
 
 ![Traza de la saga del pago en Jaeger](../capturas/pago-06-jaeger-saga-del-pago.png)
 
-![Traza de una búsqueda: Cocheras consulta la ocupación a Reservas](../capturas/cocheras-02-jaeger-busqueda.png)
+![Traza de una búsqueda en Cocheras: consulta a Redis, consulta geográfica en PostGIS y DataLoader agrupando las consultas de disponibilidad; más abajo, las consultas de ocupación a Reservas (2 servicios, 63 spans)](../capturas/cocheras-02-jaeger-busqueda.png)
 
 ## Métricas
 
@@ -60,7 +60,7 @@ La latencia p95 por servicio es la medida de **calidad de servicio** del sistema
 
 ![Tablero técnico de Grafana con tráfico de la demo](../capturas/infra-01-grafana-tecnico.png)
 
-![Fila de Cocheras: búsquedas, caché de Redis y consultas a Reservas](../capturas/cocheras-01-grafana-fila-cocheras.png)
+![Fila de Cocheras: operaciones GraphQL, latencia por operación, 88,9 % de búsquedas resueltas desde la caché de Redis, eventos consumidos y consultas de ocupación a Reservas](../capturas/cocheras-01-grafana-fila-cocheras.png)
 
 ![Fila de Usuarios](../capturas/usuarios-01-grafana-fila-usuarios.png)
 
@@ -73,7 +73,7 @@ Prometheus evalúa 18 alertas (`infra/prometheus/alertas.yml`). Se agrupan en cu
 - **Mensajes que no avanzan:** eventos en la cola de mensajes fallidos (`EventosEnDLQ`), o un outbox que se acumula porque RabbitMQ no los recibe, aunque la API siga respondiendo bien.
 - **Seguridad y negocio:** más de 30 logins fallidos en 5 minutos (posible fuerza bruta), un refresh token reutilizado (posible sesión robada), reembolsos con error o un exceso de reservas que expiran sin pagarse (señal de un problema con Pagos).
 
-![Alertas en Prometheus](../capturas/cocheras-03-prometheus-alertas.png)
+![Alertas en Prometheus: `EventosEnDLQ` disparada después de publicar un evento inválido, que terminó en la cola de mensajes fallidos](../capturas/cocheras-03-prometheus-alertas.png)
 
 ## Beneficios: qué nos permitió encontrar
 
@@ -86,7 +86,7 @@ Además, la prueba de un evento inválido mostró el camino completo de un fallo
 
 En la operación diaria, cada señal responde una pregunta distinta. Las **métricas** dicen que algo anda mal (sube la latencia, crecen los conflictos o se acumula el outbox). Las **trazas** dicen dónde (qué servicio o qué consulta tarda). Los **logs** dicen por qué (el error exacto).
 
-![Desde un log de Loki se salta a su traza](../capturas/cocheras-04-loki-log-a-traza.png)
+![A la izquierda, los logs de una reserva en todos los servicios, filtrados por su `traceId`; con «Ver traza en Jaeger» se abre a la derecha la traza completa](../capturas/cocheras-04-loki-log-a-traza.png)
 
 De los desafíos que plantea el curso, dos se nos presentaron:
 - **El monitoreo de microservicios y contenedores,** que resolvimos haciendo que cada servicio emita lo mismo y con los mismos nombres. Por eso un panel compara la latencia de los cuatro.
