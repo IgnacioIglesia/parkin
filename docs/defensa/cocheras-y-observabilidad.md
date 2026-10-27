@@ -21,7 +21,7 @@ Guía para quien defiende esta parte: qué explicar, qué mostrar y qué pregunt
 | Una traza completa | La URL de Jaeger que imprime `scripts/demo.mjs` al final: Reservas consulta a Cocheras dentro de la misma traza, y la confirmación por evento aparece colgada de ella |
 | Seguir un pedido en todos los servicios | La consulta de Loki que imprime el mismo script: `{servicio=~".+"} \|= "<traceId>"` |
 | Las alertas | `http://localhost:9090/alerts` |
-| Degradación controlada | `docker compose stop reservas`, buscar en el mapa (funciona, sin el filtro de ocupación), `docker compose start reservas`. No apagar Redis en vivo: Pagos lo necesita para arrancar si se reinicia |
+| Degradación controlada | `docker compose stop reservas`, buscar en el mapa (funciona, sin el filtro de ocupación), `docker compose start reservas`. También se puede mostrar con Redis (`docker compose stop redis`): la búsqueda sigue sin caché |
 
 Antes de la defensa: `docker compose ps` con todo `healthy`, `node scripts/sembrar-cocheras.mjs` para que la búsqueda tenga datos, y una corrida de `CONDUCTORES=20 node scripts/demo.mjs` para que el tablero tenga tráfico.
 
@@ -57,7 +57,7 @@ La búsqueda es «cocheras a menos de N metros de este punto, ordenadas por dist
 Sí, hasta 30 segundos: es consistencia eventual, elegida a propósito. Puede mostrar como libre una cochera que alguien acaba de reservar, pero el intento de reservarla recibe `409` por la restricción de Reservas. Nunca hay doble reserva, solo una pantalla un poco vieja. Ante un cambio en una cochera (alta, edición, disponibilidad o baja) o una reserva confirmada o cancelada, se incrementa un número de versión que forma parte de cada clave, y así se invalidan todas las búsquedas guardadas de una vez.
 
 **¿Qué pasa si cae Redis? ¿Y si cae Reservas?**
-Sin Redis, la búsqueda va directo a la base: más lenta, pero funciona (Pagos, en cambio, no arranca sin Redis, porque lo usa para los avisos). Sin Reservas, la búsqueda devuelve las cocheras sin el filtro de ocupación en vez de fallar: la búsqueda es orientativa, y Reservas igual frena la doble reserva cuando vuelve. Lo que sí se rechaza sin Reservas es la baja de una cochera, porque no se puede saber si tiene reservas activas: ante la duda, no se borra.
+Sin Redis, la búsqueda va directo a la base: más lenta, pero funciona (Pagos también: si arranca sin Redis, espera 5 segundos y sigue sin el adaptador de los avisos, que con una réplica no hace falta). Sin Reservas, la búsqueda devuelve las cocheras sin el filtro de ocupación en vez de fallar: la búsqueda es orientativa, y Reservas igual frena la doble reserva cuando vuelve. Lo que sí se rechaza sin Reservas es la baja de una cochera, porque no se puede saber si tiene reservas activas: ante la duda, no se borra.
 
 **¿Y si cae RabbitMQ?**
 El consumidor reintenta cada 3 segundos y `/ready` responde `503` mientras tanto. La búsqueda y la gestión de cocheras siguen funcionando; lo único que se demora es habilitar la dirección exacta, que llega cuando vuelve el broker, porque los eventos esperan en la cola durable.
