@@ -164,7 +164,7 @@ export function Cochera() {
         </p>
 
         <div className="mt-6">
-          <MapaPunto punto={cochera.ubicacionAproximada} aproximado={!cochera.direccionExacta} />
+          <MapaPunto punto={cochera.ubicacion ?? cochera.ubicacionAproximada} aproximado={!cochera.ubicacion} />
           {cochera.direccionExacta ? (
             <p className="mt-3 flex gap-2 text-lg">
               <MapPin size={22} className="mt-0.5 shrink-0 text-verde" aria-hidden="true" />

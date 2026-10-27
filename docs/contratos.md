@@ -64,7 +64,6 @@ Cómo llegan las rutas a cada servicio (implementado en `gateway/nginx.conf`):
 | POST | `/auth/refresh` | No | Rota el refresh token y devuelve una sesión nueva |
 | POST | `/auth/logout` | No | Revoca ese refresh token |
 | POST | `/auth/logout-todos` | Sí (lo verifica Usuarios) | Revoca todas las sesiones del usuario |
-| GET | `/auth/verificar` | Opcional | Valida el JWT y devuelve la identidad en `X-User-Id` y `X-User-Roles`. Alternativa a `gateway/jwt.js`; hoy el gateway no lo usa |
 | GET | `/users/me` | Sí | Perfil del usuario autenticado |
 | PATCH | `/users/me` | Sí | Actualiza nombre y teléfono |
 | POST | `/users/me/roles` | Sí | Suma un rol y devuelve un access token con los roles nuevos |

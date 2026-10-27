@@ -45,7 +45,6 @@ Errores: `{ "error": { "codigo": "...", "mensaje": "...", "detalles": [...] } }`
 | POST | `/auth/refresh` | no | 200 sesión · 401 `TOKEN_INVALIDO` / `TOKEN_REUTILIZADO` |
 | POST | `/auth/logout` | no | 204 (revoca ese refresh token) |
 | POST | `/auth/logout-todos` | sí | 204 (revoca todas las sesiones) |
-| GET | `/auth/verificar` | — | Alternativa (hoy sin uso): 204 con `X-User-Id` y `X-User-Roles` · 204 sin identidad si no hay token · 401 |
 | GET | `/users/me` | sí | 200 usuario |
 | PATCH | `/users/me` | sí | 200 usuario · 422 |
 | POST | `/users/me/roles` | sí | 200 `{ usuario, accessToken }` |
@@ -98,8 +97,8 @@ El gateway valida los JWT **por su cuenta**, sin llamar a Usuarios: `gateway/jwt
 firma RS256 con `infra/jwt/jwt_public.pem`, controla `exp`, `nbf` y el emisor `parkin-usuarios`, y
 reenvía la identidad a los servicios en `X-User-Id` y `X-User-Roles`. Usuarios solo firma.
 
-`GET /auth/verificar` hace la misma verificación desde Usuarios, con los mismos headers. Hoy el
-gateway no lo usa; queda como alternativa (por ejemplo, con un NGINX sin njs, vía `auth_request`).
+Hasta el 26/10 existía `GET /auth/verificar` para que el gateway le preguntara a Usuarios con
+`auth_request`. Se borró porque nadie lo usaba (ver `docs/arquitectura.md`, «Autenticación»).
 
 `/metrics` es para Prometheus, que lo pide directo por la red de Docker. Lo que llega por el gateway
 trae `X-Forwarded-For` y recibe `404`, así las métricas no quedan a la vista de cualquier usuario

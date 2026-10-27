@@ -67,6 +67,9 @@ export function NotificacionesProvider({ children }) {
 
   useEffect(() => {
     if (estado !== 'autenticado') return;
+    // Un pago rechazado llega como dos eventos de la misma reserva: pago:rechazado (Pagos) y,
+    // enseguida, reserva:cancelada (Reservas). Se muestra un solo aviso, el más específico.
+    const rechazadas = new Map();
     // auth como función: en cada reconexión manda el access token vigente, no el del arranque.
     const socket = io(import.meta.env.VITE_API_URL || undefined, {
       path: '/ws',
@@ -86,6 +89,8 @@ export function NotificacionesProvider({ children }) {
     for (const [evento, info] of Object.entries(EVENTOS)) {
       socket.on(evento, (datos = {}) => {
         window.dispatchEvent(new CustomEvent(EVENTO_RESERVA, { detail: { evento, datos } }));
+        if (evento === 'pago:rechazado') rechazadas.set(datos.reservaId, Date.now());
+        if (evento === 'reserva:cancelada' && Date.now() - (rechazadas.get(datos.reservaId) ?? 0) < 30_000) return;
         avisar({ ...info, etiqueta: info.estado === 'EXPIRADA' ? 'Vencida' : info.estado, reservaId: datos.reservaId });
       });
     }

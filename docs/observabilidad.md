@@ -124,7 +124,7 @@ Prometheus las recoge desde `infra/prometheus/prometheus.yml` y evalúa las aler
 
 ## Usuarios (implementado)
 
-**Logs.** JSON a stdout (`pino`) con `servicio`, `nivel`, `traceId` (del `traceparent` del gateway) y `usuarioId`; una línea por request con método, ruta, estado y `duracionMs`. No se registran `/health`, `/ready`, `/metrics` ni `/auth/verificar` (los llaman Docker, Prometheus y el gateway en cada request). Contraseñas y tokens se eliminan de cualquier log.
+**Logs.** JSON a stdout (`pino`) con `servicio`, `nivel`, `traceId` (del `traceparent` del gateway) y `usuarioId`; una línea por request con método, ruta, estado y `duracionMs`. No se registran `/health`, `/ready` ni `/metrics` (los llaman Docker y Prometheus cada pocos segundos). Contraseñas y tokens se eliminan de cualquier log.
 
 **Métricas.** `GET /metrics`, recogido por Prometheus (job `usuarios`). Interno: lo que llega por el gateway trae `X-Forwarded-For` y Usuarios responde 404.
 
@@ -135,9 +135,8 @@ Prometheus las recoge desde `infra/prometheus/prometheus.yml` y evalúa las aler
 | `usuarios_registros_total` | Cuentas nuevas |
 | `usuarios_logins_total{resultado}` | `ok` o `fallido` |
 | `usuarios_refresh_total{resultado}` | `ok`, `gracia`, `invalido` o `reutilizado` |
-| `usuarios_verificaciones_total{resultado}` | Verificaciones de JWT del gateway: `ok`, `anonimo`, `invalido` |
 
-**Trazas.** OpenTelemetry con instrumentación automática de HTTP y pg, exportada a Jaeger igual que Cocheras (`usuarios/src/telemetria.js`, cargado con `node --import`; sin `OTEL_EXPORTER_OTLP_ENDPOINT` no hace nada). El span de cada request continúa el `traceparent` del gateway y su `traceId` es el de los logs y el header `X-Trace-Id`. Un login o un registro se ve como `POST` → consultas SQL. `/auth/verificar` no se traza: el gateway lo llama en cada request y llenaría Jaeger de trazas de una línea; se sigue en `usuarios_verificaciones_total` y en la alerta `UsuariosVerificacionLenta`. Las consultas de la migración al arrancar tampoco, porque no pertenecen a ninguna request.
+**Trazas.** OpenTelemetry con instrumentación automática de HTTP y pg, exportada a Jaeger igual que Cocheras (`usuarios/src/telemetria.js`, cargado con `node --import`; sin `OTEL_EXPORTER_OTLP_ENDPOINT` no hace nada). El span de cada request continúa el `traceparent` del gateway y su `traceId` es el de los logs y el header `X-Trace-Id`. Un login o un registro se ve como `POST` → consultas SQL. Los health checks y `/metrics` no se trazan: los llaman Docker y Prometheus cada pocos segundos. Las consultas de la migración al arrancar tampoco, porque no pertenecen a ninguna request.
 
 **Qué permite detectar.** Un pico de `usuarios_logins_total{resultado="fallido"}` indica un ataque de fuerza bruta (además del rate limiting del gateway); cualquier `usuarios_refresh_total{resultado="reutilizado"}` es una sesión posiblemente robada; muchas verificaciones `invalido` apuntan a un front con tokens vencidos que no refresca.
 

@@ -59,6 +59,7 @@ Endpoints, eventos y esquema: [`contratos.md`](contratos.md).
 2. El gateway verifica la firma, `exp` y emisor **localmente** con la clave pública, sin llamar a Usuarios en cada request, y pasa la identidad a los servicios en `X-User-Id` y `X-User-Roles`. Descarta siempre lo que el cliente mande en esos headers.
 3. Hay rutas públicas (registro, login, webhook de la pasarela), rutas con token obligatorio (Reservas, Pagos, perfil) y una con token opcional (`/graphql`, para poder buscar cocheras sin sesión).
 4. Defensa en profundidad: Usuarios y Pagos vuelven a verificar el token. Pagos lo necesita igual para el handshake del WebSocket.
+5. **Decisión: se borró `GET /auth/verificar` de Usuarios (26/10).** La primera versión del gateway validaba con `auth_request` contra ese endpoint; cuando pasó a verificar localmente con njs (punto 2), quedó sin uso. Se evaluó dejarlo como alternativa para un NGINX sin njs, pero se borró junto con su métrica y sus tests: un endpoint que nadie llama no se prueba en la práctica y suma superficie de ataque. Si hiciera falta volver a `auth_request`, está en el historial de git (PR #20).
 
 ## Flujo principal: reservar y pagar
 

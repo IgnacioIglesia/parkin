@@ -26,20 +26,13 @@ describe('salud', () => {
   });
 });
 
-describe('GET /auth/verificar (auth_request del gateway)', () => {
-  test('sin Authorization: 204 anónimo, sin identidad', async () => {
-    const res = await api.pedir('/auth/verificar');
-    assert.equal(res.status, 204);
-    assert.equal(res.headers.get('x-user-id'), null);
-  });
-
-  test('con token válido: 204 con X-User-Id y X-User-Roles', async () => {
-    const res = await api.pedir('/auth/verificar', {
-      headers: { Authorization: `Bearer ${firmarAccessToken(usuario)}` },
-    });
-    assert.equal(res.status, 204);
-    assert.equal(res.headers.get('x-user-id'), usuario.id);
-    assert.equal(res.headers.get('x-user-roles'), 'CONDUCTOR,PROPIETARIO');
+// El gateway ya validó el token, pero Usuarios lo vuelve a verificar en sus rutas protegidas
+// (defensa en profundidad). Sin base de datos se prueban los rechazos; el caso válido, en sesion.test.js.
+describe('verificación del access token (GET /users/me)', () => {
+  test('sin Authorization: 401', async () => {
+    const res = await api.pedir('/users/me');
+    assert.equal(res.status, 401);
+    assert.equal((await res.json()).error.codigo, 'NO_AUTENTICADO');
   });
 
   test('token firmado con otra clave: 401', async () => {
@@ -49,7 +42,7 @@ describe('GET /auth/verificar (auth_request del gateway)', () => {
       subject: usuario.id,
       issuer: 'parkin-usuarios',
     });
-    const res = await api.pedir('/auth/verificar', { headers: { Authorization: `Bearer ${falso}` } });
+    const res = await api.pedir('/users/me', { headers: { Authorization: `Bearer ${falso}` } });
     assert.equal(res.status, 401);
   });
 
@@ -59,12 +52,12 @@ describe('GET /auth/verificar (auth_request del gateway)', () => {
       (await import('node:fs')).readFileSync(process.env.JWT_PRIVATE_KEY_PATH),
       { algorithm: 'RS256', subject: usuario.id, issuer: 'parkin-usuarios' },
     );
-    const res = await api.pedir('/auth/verificar', { headers: { Authorization: `Bearer ${vencido}` } });
+    const res = await api.pedir('/users/me', { headers: { Authorization: `Bearer ${vencido}` } });
     assert.equal(res.status, 401);
   });
 
   test('Authorization mal formado: 401', async () => {
-    const res = await api.pedir('/auth/verificar', { headers: { Authorization: 'Basic abc' } });
+    const res = await api.pedir('/users/me', { headers: { Authorization: 'Basic abc' } });
     assert.equal(res.status, 401);
   });
 });
@@ -128,6 +121,6 @@ describe('claves y métricas', () => {
   test('GET /metrics expone las métricas en formato Prometheus', async () => {
     const texto = await (await api.pedir('/metrics')).text();
     assert.match(texto, /usuarios_http_requests_total/);
-    assert.match(texto, /usuarios_verificaciones_total\{resultado="ok"\}/);
+    assert.match(texto, /usuarios_logins_total/);
   });
 });

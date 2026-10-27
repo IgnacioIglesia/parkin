@@ -30,9 +30,8 @@ function Datos({ cochera, alGuardar }) {
     direccionExacta: cochera?.direccionExacta ?? '',
     fotos: (cochera?.fotos ?? []).join('\n'),
   });
-  // La ubicación exacta no viaja al navegador (solo la aproximada), así que se marca en el mapa
-  // al publicar y también al editar los datos.
-  const [ubicacion, setUbicacion] = useState(null);
+  // Al editar arranca en el punto exacto, que Cocheras le devuelve solo al dueño (`ubicacion`).
+  const [ubicacion, setUbicacion] = useState(cochera?.ubicacion ?? null);
   const [estado, setEstado] = useState('quieto');
   const [error, setError] = useState(null);
   const cambiar = (campo) => (e) => {
@@ -107,11 +106,11 @@ function Datos({ cochera, alGuardar }) {
           {ubicacion
             ? 'Marcada. Tocá otra vez para corregirla. En la búsqueda se muestra una zona aproximada, no este punto.'
             : cochera
-              ? 'Para guardar cambios, marcá de nuevo el lugar exacto: por privacidad no lo traemos del servidor.'
+              ? 'Tocá el mapa donde está la cochera.'
               : 'Tocá el mapa donde está la cochera.'}
         </p>
         <MapaPunto
-          centro={cochera?.ubicacionAproximada ?? BARRIOS[0]}
+          centro={cochera?.ubicacion ?? cochera?.ubicacionAproximada ?? BARRIOS[0]}
           punto={ubicacion}
           onElegir={(p) => {
             setUbicacion(p);
