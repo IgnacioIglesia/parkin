@@ -8,7 +8,7 @@ parkIN es una plataforma distribuida de alquiler de cocheras por franja horaria.
 
 ## El problema
 
-Encontrar estacionamiento en zonas de alta densidad urbana genera congestión y pérdida de tiempo. A la vez, existen muchas cocheras en edificios y casas que quedan vacías durante varias horas del día. No hay un mecanismo seguro y eficiente que conecte ambas puntas y, sobre todo, que gestione **reservas concurrentes**: si dos conductores intentan reservar la misma cochera a la misma hora, el sistema no puede dejar que ambos lo consigan (una doble reserva) ni mostrar como libre una cochera que ya está tomada (una "cochera fantasma").
+Encontrar estacionamiento en zonas de alta densidad urbana genera congestión y pérdida de tiempo. A la vez, existen muchas cocheras en edificios y casas que quedan vacías durante varias horas del día. No hay un mecanismo seguro y eficiente que conecte ambas puntas y, sobre todo, que gestione **reservas concurrentes**: si dos conductores intentan reservar la misma cochera a la misma hora, el sistema no puede dejar que ambos lo consigan (una doble reserva) ni mostrar como libre una cochera que ya está tomada (una «cochera fantasma»).
 
 Ese es el corazón técnico del proyecto, y lo que lo vuelve un problema de **sistemas distribuidos**: varias personas, desde distintos dispositivos y contra distintas instancias del sistema, deben ver un estado consistente sin sacrificar disponibilidad ni tiempos de respuesta.
 
@@ -43,7 +43,7 @@ Desde lo académico, es un caso donde las características de los sistemas distr
 
 ## Uso de inteligencia artificial
 
-Usamos Claude Code durante todo el proyecto para implementar servicios, escribir pruebas, reproducir y diagnosticar errores, revisar la seguridad del gateway y mantener la documentación al día. Nuestro criterio fue que **la IA escribe y la persona revisa, decide y publica**: la arquitectura, el reparto de servicios y las decisiones entre alternativas fueron del equipo, y cada cambio se verificó corriendo (pruebas contra bases de datos y un broker reales, y recorridos de punta a punta). La metodología y el registro de decisiones concretas, con lo que se aceptó y lo que se corrigió, están en `docs/uso-ia.md`.
+Usamos Claude Code durante todo el proyecto para implementar servicios, escribir pruebas, reproducir y diagnosticar errores, revisar la seguridad del gateway y mantener la documentación al día. Nuestro criterio fue que **la IA escribe y la persona revisa, decide y publica**: la arquitectura, el reparto de servicios y las decisiones entre alternativas fueron del equipo, y cada cambio se verificó corriendo (pruebas contra bases de datos y un broker reales, y recorridos de punta a punta). Algunas decisiones concretas en las que nos apoyamos en ella, siempre con la elección final del equipo: validar el token en el gateway con njs y la clave pública en lugar de consultar a Usuarios en cada pedido; garantizar que no haya dobles reservas con una restricción de la base de datos y no con código de la aplicación; resolver los *deadlocks* que aparecieron con reservas simultáneas con un bloqueo por cochera; publicar los eventos con un *outbox* transaccional para no perderlos si cae RabbitMQ; reembolsar automáticamente los pagos que llegan tarde; y descartar un servicio de Pagos duplicado, aprovechando lo aprendido para detectar que la traza se cortaba en el webhook. La metodología completa y un resumen de las decisiones, con lo que se aceptó y lo que se corrigió, están en el anexo de uso de IA; el registro detallado está en `docs/uso-ia.md`.
 
 ## Equipo
 
