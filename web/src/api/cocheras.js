@@ -34,6 +34,7 @@ export async function buscarCocheras({ cerca, radioMetros, desde, hasta, tipo })
 const FICHA = `
   id titulo precioHora tipoVehiculo direccionExacta fotos
   ubicacionAproximada { lat lng }
+  ubicacion { lat lng }
   propietario { id }
   disponibilidad { diaSemana horaDesde horaHasta }`;
 
