@@ -4,7 +4,7 @@ Reparto de las diapositivas, qué dice cada uno y qué demos se muestran. El det
 - `reservas-e-infraestructura.md`;
 - `usuarios-y-web.md`;
 - `cocheras-y-observabilidad.md`;
-- `pagos.md` (pendiente).
+- `pagos.md`.
 
 Para repasar los conceptos del curso aplicados a parkIN: `temas-del-curso.md`.
 
