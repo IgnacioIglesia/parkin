@@ -29,7 +29,7 @@ La letra pide un sistema de ficheros o una base de datos. Usamos **bases de dato
 
 **Por qué PostgreSQL y no una base NoSQL.** El problema central del proyecto es la concurrencia sobre datos que no pueden quedar inconsistentes (una franja, un pago). PostgreSQL ofrece transacciones ACID, restricciones que se cumplen aunque haya varias réplicas del servicio, y bloqueos explícitos. Usar el mismo motor en los cuatro servicios simplifica la operación (una sola imagen, las mismas herramientas), sin que compartan datos.
 
-**Redis 7** se usa para dos cosas cuyos datos pueden perderse sin romper nada: la caché de búsquedas de Cocheras (30 segundos, invalidada por versión) y el adaptador de Socket.IO de Pagos. Si Redis se cae, la búsqueda va directo a la base. Pagos, en cambio, necesita Redis para arrancar.
+**Redis 7** se usa para dos cosas cuyos datos pueden perderse sin romper nada: la caché de búsquedas de Cocheras (30 segundos, invalidada por versión) y el adaptador de Socket.IO de Pagos. Si Redis se cae, la búsqueda va directo a la base. Pagos, si tiene `REDIS_URL` configurada (como en el compose), necesita Redis para arrancar.
 
 **Ficheros.** El sistema no guarda archivos: las fotos de las cocheras se guardan como URLs. Subirlas pediría un almacenamiento de objetos compartido entre réplicas (por ejemplo, uno compatible con S3), y quedó como evolución.
 
