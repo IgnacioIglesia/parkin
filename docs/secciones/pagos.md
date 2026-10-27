@@ -1,6 +1,6 @@
 # Servicio de Pagos y Notificaciones
 
-Sección del documento final. Describe lo que está implementado en `pagos/` y en la pasarela simulada `pasarela-mock/`. Lo provisorio o pendiente está en la sección 11.
+Sección del documento final. Describe lo que está implementado en `pagos/` y en la pasarela simulada `pasarela-mock/`. Lo provisorio o pendiente está en la sección 13.
 
 ## 1. Responsabilidad
 
@@ -36,7 +36,7 @@ El cliente manda solo `{ reservaId }`: **el monto no lo elige el cliente**. Se c
 | `401` | `NO_AUTENTICADO`, `TOKEN_INVALIDO` | Sin token o token inválido |
 | `403` | `NO_ES_TU_RESERVA`, `NO_ES_TU_PAGO` | La reserva o el pago son de otro usuario |
 | `404` | `RESERVA_DESCONOCIDA` | Todavía no llegó `reserva.creada`; el front reintenta |
-| `409` | `RESERVA_NO_PAGABLE`, `PAGO_EN_CURSO`, `IDEMPOTENCY_KEY_EN_USO` | La reserva ya no está pendiente o venció; ya hay un pago aprobado; la clave se usó para otra cosa |
+| `409` | `RESERVA_NO_PAGABLE`, `PAGO_EN_CURSO`, `IDEMPOTENCY_KEY_EN_USO` | La reserva ya no está pendiente o venció; ya hay un pago aprobado o en curso para esa reserva; la clave se usó para otra cosa |
 | `422` | `DATOS_INVALIDOS` | Falta `reservaId` o `Idempotency-Key`, o no son UUID |
 | `503` | `PASARELA_NO_DISPONIBLE` | La pasarela no respondió; la reserva se puede volver a pagar |
 
@@ -51,7 +51,7 @@ El cliente manda solo `{ reservaId }`: **el monto no lo elige el cliente**. Se c
 
 **Database per service.** Pagos nunca consulta la base ni la API de Reservas. Todo lo que necesita para cobrar (quién es el conductor, cuánto cobrar, hasta cuándo) lo guarda en `reserva_local` a partir de los eventos. Por eso, si Reservas está caída, un conductor igual puede pagar una reserva que ya existe.
 
-La copia local nunca retrocede: cada estado tiene un orden (`PENDIENTE_PAGO` < `CONFIRMADA` < `CANCELADA`/`EXPIRADA` < `FINALIZADA`) y el upsert solo actualiza si el estado nuevo es posterior. Un evento atrasado o repetido no puede revivir una reserva cancelada.
+La copia local nunca retrocede: cada estado tiene un orden (`PENDIENTE_PAGO` < `CONFIRMADA` < `CANCELADA`/`EXPIRADA` < `FINALIZADA`) y el upsert solo actualiza si el estado nuevo es posterior. Un evento atrasado o repetido no puede revivir una reserva cancelada. `FINALIZADA` está prevista en el orden, pero Reservas todavía no publica `reserva.finalizada`, así que hoy Pagos nunca la recibe.
 
 ## 4. Flujo de un pago
 
@@ -203,7 +203,7 @@ Son dos trazas porque son dos acciones del conductor: reservar y pagar. Cada una
 
 ## 12. Pruebas
 
-**Automáticas.** `npm test` corre 61 tests contra un PostgreSQL real, porque los bloqueos y los índices únicos son parte de lo que se prueba (`TEST_DATABASE_URL=postgres://app:app@localhost:5444/pagos_test npm test`). Cubren la API y sus errores, los pagos concurrentes, la firma HMAC, el webhook repetido y adulterado, los eventos fuera de orden y repetidos, el outbox y el WebSocket. Resultado: 61 de 61.
+**Automáticas.** `npm test` corre 60 tests contra un PostgreSQL real, porque los bloqueos y los índices únicos son parte de lo que se prueba (`TEST_DATABASE_URL=postgres://app:app@localhost:5444/pagos_test npm test`). Cubren la API y sus errores, los pagos concurrentes, la firma HMAC, el webhook repetido y adulterado, los eventos fuera de orden y repetidos, el outbox y el WebSocket. Resultado: 60 de 60.
 
 **De punta a punta** (todo el sistema con `docker compose up`, todo a través del gateway):
 
@@ -228,7 +228,7 @@ Tomadas con el sistema levantado con `docker compose up`, en el front (`localhos
 
 ![Reserva retenida con cuenta regresiva y botón Pagá](../capturas/pago-02-reserva-pendiente.png)
 
-**2. La pasarela de prueba.** El monto lo calculó Reservas (2 h × $90); el conductor elige cómo termina el pago.
+**2. La pasarela de prueba.** El monto lo calculó Reservas (2 h × $90; es otra cochera que la de la tabla de arriba); el conductor elige cómo termina el pago.
 
 ![Pasarela de prueba con Aprobar y Rechazar](../capturas/pago-01-pasarela-checkout.png)
 
