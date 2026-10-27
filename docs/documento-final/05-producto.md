@@ -42,11 +42,17 @@ Si otra persona intenta la misma cochera y franja (aunque sea en el mismo instan
 
 ## 4. Pago y notificación
 
-«Pagá» abre la pasarela de pago en otra pestaña. Al aprobar, sin recargar nada, la reserva pasa a **Confirmada**, llega el aviso en tiempo real y aparece la dirección exacta.
+«Pagá» abre la pasarela de pago en otra pestaña. Es una pasarela simulada, que imita el flujo de Mercado Pago (orden, página de pago y aviso firmado a Pagos) sin mover dinero real: ofrece aprobar o rechazar el pago.
+
+![Pasarela de pago](../capturas/pago-01-pasarela-checkout.png)
+
+Al aprobar, sin recargar nada, la reserva pasa a **Confirmada**, llega el aviso en tiempo real y aparece la dirección exacta.
 
 ![Reserva confirmada con el aviso en vivo](../capturas/web-07-reserva-confirmada.png)
 
-Si el pago se rechaza, llega el aviso, la reserva queda cancelada y la franja se libera para otra persona.
+Si el pago se rechaza, la pasarela da la orden por cerrada, llega el aviso, la reserva queda cancelada y la franja se libera para otra persona.
+
+![Orden rechazada en la pasarela](../capturas/pago-05-pasarela-resuelta.png)
 
 ![Pago rechazado](../capturas/web-08-pago-rechazado.png)
 
