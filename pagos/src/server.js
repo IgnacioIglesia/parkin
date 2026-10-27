@@ -12,6 +12,7 @@ import { crearPublicador } from './publicador.js';
 import { crearNotificaciones } from './notificaciones.js';
 import { metricas } from './metricas.js';
 import { contarPendientesDeSalida } from './repositorio.js';
+import { apagarTelemetria } from './telemetria.js';
 
 if (!config.jwtPublicKeyPath) {
   logger.fatal('Falta JWT_PUBLIC_KEY_PATH: sin la clave pública no se pueden verificar los tokens');
@@ -82,6 +83,7 @@ async function apagar(senal) {
   await notificaciones.cerrar();
   servidor.close(async () => {
     await pool.end();
+    await apagarTelemetria();
     process.exit(0);
   });
 }

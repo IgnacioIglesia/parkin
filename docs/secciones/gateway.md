@@ -107,6 +107,25 @@ El front puede estar en otro dominio (Vercel) que el gateway, así que el navega
 
 Si el cliente no manda `traceparent` (W3C), el gateway lo genera a partir de su `$request_id`. Lo reenvía a cada servicio, y los servicios lo propagan en sus llamadas y dentro de cada evento de RabbitMQ. Así un pedido se puede seguir por todos los servicios con un único `traceId`. El gateway lo devuelve en el header `X-Trace-Id` (expuesto por CORS para que el front lo pueda mostrar o loguear).
 
+**Logs.** Cada request deja una línea JSON con los mismos campos que los servicios (`nivel`, `servicio`, `traceId`, `usuarioId`), más método, ruta original sin query, estado, `duracionMs` y a qué contenedor fue. El `nivel` sale del estado (`warn` para `4xx`, `error` para `5xx`). Alloy los manda a Loki igual que los de los servicios, así que buscando un `traceId` aparece primero la línea del gateway y después la de cada servicio por el que pasó. No se loguea `/health` ni, nunca, headers, cuerpos o la query.
+
+**Evidencia:** un pedido con `traceparent` propio quedó en el log del gateway con ese `traceId` y el `usuarioId` del token, y la búsqueda de ese `traceId` en Loki devolvió la línea del gateway y la de Reservas. Un `401` y un `404` quedaron con `nivel: warn`, y ni el token ni la query aparecen en ninguna línea.
+
+**Log de errores.** NGINX no permite escribirlo en JSON, así que sale en texto (`2026/10/26 22:30:43 [warn] ... js: jwt: token rechazado`). Se registra desde el nivel `warn`, para que queden los tokens mal formados que rechaza `jwt.js`. Alloy le saca el nivel del texto, así que en Loki se filtra igual que los logs JSON: `{servicio="gateway", nivel="warn"}`.
+
+**Métricas.** NGINX expone sus contadores (`stub_status`) en el puerto interno `8088`, que no se publica en el host. El contenedor `gateway-exporter` (`nginx-prometheus-exporter`) los traduce y Prometheus los lee:
+
+| Métrica | Qué mide |
+|---|---|
+| `nginx_up` | Si el exportador puede leer a NGINX (1) o no (0) |
+| `nginx_http_requests_total` | Pedidos atendidos desde que arrancó |
+| `nginx_connections_active`, `_reading`, `_writing`, `_waiting` | Conexiones abiertas en este momento, incluidas las de WebSocket |
+| `nginx_connections_accepted`, `_handled` | Si difieren, NGINX está descartando conexiones por falta de capacidad |
+
+La alerta `GatewayCaido` (`nginx_up == 0` durante 1 minuto) avisa si el gateway deja de responder. Como es el único punto de entrada, que se caiga equivale a que se caiga todo el sistema. `stub_status` no separa por código de respuesta: los errores del gateway se cuentan en sus logs, filtrando por `nivel`.
+
+**Evidencia:** Prometheus lee el job `gateway` (`nginx_up 1`), la alerta está cargada, y el `8088` no responde desde el host ni `/stub_status` por el `8080` (`404`).
+
 ## 8. WebSocket y pasarela de prueba
 
 **`/ws`.** Hace proxy de Socket.IO hacia Pagos con `Upgrade` y `Connection: upgrade`, y un `proxy_read_timeout` de una hora para que las conexiones abiertas no se corten. El token no viaja en un header sino en el handshake, así que no lo valida el gateway: lo verifica Pagos al conectar.
@@ -121,12 +140,12 @@ Si el cliente no manda `traceparent` (W3C), el gateway lo genera a partir de su 
 | No puede leer la clave pública | `503 AUTH_NO_DISPONIBLE` en las rutas protegidas (falla cerrado) |
 | Sin token o token inválido en ruta protegida | `401 NO_AUTENTICADO` con `WWW-Authenticate: Bearer` |
 | Exceso de pedidos | `429` |
+| Ruta que no existe | `404` con `{ "error": { "codigo": "NO_ENCONTRADO" } }`, el mismo formato que los servicios |
 
 En el compose, el gateway espera a que el servicio `jwt-claves` termine de generar las claves (`service_completed_successfully`). Si el archivo de la clave no existiera al crear el contenedor, Docker crearía una carpeta con ese nombre y el arranque desde cero fallaría.
 
 ## 10. Provisorio o pendiente
 
-- **Logs.** El gateway usa el formato de acceso por defecto de NGINX, en texto. Para cumplir la convención del resto de los servicios (JSON con `traceId`) hay que definir un `log_format` en JSON que incluya `$trace_id`, `$usuario_id`, el estado y la duración.
-- **Métricas.** El gateway no expone métricas propias. Los servicios sí, así que las tasas de error y la latencia se ven por servicio.
+- **Métricas por ruta o código.** `stub_status` solo da totales. Para tener latencia y errores por ruta en Prometheus haría falta el módulo VTS (que no viene en la imagen oficial) o NGINX Plus. Hoy esos datos salen de los logs JSON del gateway y de las métricas de cada servicio.
 - **Varias réplicas de Pagos.** El contrato menciona *sticky sessions* para `/ws`. Hoy no hacen falta: hay una sola réplica, y con transporte WebSocket la conexión queda fija en una réplica. Si se escala Pagos y algún cliente usa *long polling*, habría que agregar `ip_hash` o `hash` en un `upstream`.
-- **Puertos de desarrollo.** El compose todavía expone algunos servicios directo en el host (por ejemplo, Pagos en `8084`) para probarlos sin gateway. En un despliegue real solo se publicaría el gateway.
+- **Puertos de desarrollo.** El compose todavía expone Usuarios (`3001`), Cocheras (`4000`) y Reservas (`8000`) directo en el host, para probarlos sin gateway. Pagos ya no se expone: solo se llega a él por el gateway. En un despliegue real solo se publicaría el gateway.

@@ -1,4 +1,5 @@
 import amqp from 'amqplib';
+import { conSpan, SpanKind } from './trazas.js';
 
 const EXCHANGE = 'cocheras.eventos';
 const REINTENTO_MS = 3000;
@@ -56,8 +57,11 @@ export function crearPublicador({ url, pool, logger, metricas }) {
     // de perderlo en silencio.
     canal.on('return', (mensaje) => devueltos.add(mensaje.properties.messageId));
 
-    const publicar = (routingKey, evento) =>
-      new Promise((resolver, rechazar) => {
+    // Span colgado del traceId del evento: la publicación aparece en la traza que la originó.
+    const publicar = (routingKey, evento) => conSpan(
+      `publicar ${routingKey}`,
+      { kind: SpanKind.PRODUCER, traceId: evento.traceId, atributos: { 'messaging.destination.name': EXCHANGE, 'reserva.id': evento.datos?.reservaId } },
+      () => new Promise((resolver, rechazar) => {
         canal.publish(
           EXCHANGE, routingKey, Buffer.from(JSON.stringify(evento)),
           { persistent: true, mandatory: true, contentType: 'application/json', messageId: evento.eventId },
@@ -68,7 +72,8 @@ export function crearPublicador({ url, pool, logger, metricas }) {
             resolver();
           },
         );
-      });
+      }),
+    );
 
     conectado = true;
     logger.info('publicador conectado a RabbitMQ');

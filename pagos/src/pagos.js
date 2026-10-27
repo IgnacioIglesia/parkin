@@ -95,7 +95,7 @@ export function crearServicioPagos({ pool, pasarela, notificar, logger, config, 
       try {
         creado = true;
         return await repo.insertarPago(db, {
-          reservaId, usuarioId, monto: reserva.monto, moneda: reserva.moneda, idempotencyKey,
+          reservaId, usuarioId, monto: reserva.monto, moneda: reserva.moneda, idempotencyKey, traceId,
         });
       } catch (err) {
         // Red de seguridad: el índice único impide dos pagos vivos aunque falle el bloqueo de arriba.
@@ -232,5 +232,8 @@ export function crearServicioPagos({ pool, pasarela, notificar, logger, config, 
     }
   }
 
-  return { crearPago, obtenerPago, procesarWebhook, reembolsar, reembolsarPendientes, avisar };
+  // traceId con el que se inició el pago (para seguir la saga al llegar el webhook).
+  const traceIdDePago = (pagoId) => repo.traceIdDePago(pool, pagoId);
+
+  return { crearPago, obtenerPago, procesarWebhook, reembolsar, reembolsarPendientes, avisar, traceIdDePago };
 }
