@@ -6,17 +6,19 @@ Proyecto de Sistemas Distribuidos, Universidad de Montevideo (2026). Martina Ber
 
 ## Levantar el sistema
 
-Hace falta Docker con Docker Compose.
+Hace falta Docker (con Docker Compose) abierto y corriendo. Node.js solo se necesita para los dos scripts opcionales de más abajo.
 
 ```bash
 docker compose up --build
 ```
 
-Con eso alcanza, también la primera vez: las claves de los JWT se generan solas. Para tener cocheras de ejemplo en el mapa:
+Con eso alcanza, también la primera vez: las claves de los JWT se generan solas. La primera vez tarda varios minutos porque construye unos 20 contenedores; cuando `docker compose ps` muestra todo en `healthy` (salvo `jwt-claves`, que termina solo), el sistema está listo. Para tener cocheras de ejemplo en el mapa:
 
 ```bash
 node scripts/sembrar-cocheras.mjs
 ```
+
+Una vez levantado el sistema, estas direcciones quedan disponibles en tu computadora. Los puertos son fijos, así que tienen que estar libres: si otro programa usa alguno, ese servicio no arranca.
 
 | Qué | Dónde |
 |---|---|
