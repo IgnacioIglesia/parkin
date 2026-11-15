@@ -57,11 +57,10 @@ flowchart LR
 | `gateway/` | NGINX con njs: único punto de entrada |
 | `web/` | Cliente React |
 | `infra/` | RabbitMQ, Prometheus, Grafana, Loki y claves |
-| `scripts/` | Datos de demo, demo de concurrencia, prueba con réplicas y armado del documento |
+| `scripts/` | Datos de demo, demo de concurrencia y prueba con réplicas |
 
 ## Documentación
 
-- [`docs/documento-final/`](docs/documento-final/): el informe de la entrega, por secciones. `node scripts/documento-final.mjs` lo arma en PDF.
 - [`docs/arquitectura.md`](docs/arquitectura.md): componentes, flujo de reserva y pago, y límites conocidos.
 - [`docs/contratos.md`](docs/contratos.md): endpoints, eventos y esquema GraphQL.
 - [`docs/secciones/`](docs/secciones/): el detalle de cada servicio.

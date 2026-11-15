@@ -72,5 +72,5 @@ La interfaz toma la forma de un **tablero de partidas**. Códigos, precios, hora
 
 **Límites:**
 - Los bloqueos de fechas puntuales no están en el contrato GraphQL.
-- El refresh token vive en `localStorage`; una cookie `httpOnly` lo protegería mejor de un XSS (ver la defensa en `docs/defensa/usuarios-y-web.md`).
+- El refresh token vive en `localStorage`; una cookie `httpOnly` lo protegería mejor de un XSS.
 - La web no inicia trazas: en Jaeger el recorrido empieza en los servicios.
