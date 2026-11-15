@@ -6,7 +6,6 @@ React 19 + Vite, JavaScript, React Router, Tailwind CSS 4, Leaflet con teselas d
 Socket.IO para los avisos en vivo.
 
 - Responsable: Martina Berrutti.
-- Descripción completa para el documento: `docs/secciones/web.md`.
 
 ## Levantar
 

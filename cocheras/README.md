@@ -47,7 +47,7 @@ Consume de la cola `cocheras.reserva-eventos` (la crea `infra/rabbitmq/definitio
 
 ## Observabilidad
 
-Logs JSON con `traceId`, métricas en `/metrics` y trazas a Jaeger con OpenTelemetry (`src/telemetria.js`). Detalle de cada métrica en `docs/observabilidad.md`.
+Logs JSON con `traceId`, métricas en `/metrics` y trazas a Jaeger con OpenTelemetry (`src/telemetria.js`).
 
 ## Base de datos
 

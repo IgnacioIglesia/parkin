@@ -61,7 +61,4 @@ flowchart LR
 
 ## Documentación
 
-- [`docs/arquitectura.md`](docs/arquitectura.md): componentes, flujo de reserva y pago, y límites conocidos.
 - [`docs/contratos.md`](docs/contratos.md): endpoints, eventos y esquema GraphQL.
-- [`docs/secciones/`](docs/secciones/): el detalle de cada servicio.
-- [`docs/observabilidad.md`](docs/observabilidad.md), [`docs/12-factor.md`](docs/12-factor.md), [`docs/caracteristicas-sd.md`](docs/caracteristicas-sd.md) y [`docs/uso-ia.md`](docs/uso-ia.md).

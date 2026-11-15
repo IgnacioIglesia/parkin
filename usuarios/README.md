@@ -98,7 +98,7 @@ firma RS256 con `infra/jwt/jwt_public.pem`, controla `exp`, `nbf` y el emisor `p
 reenvía la identidad a los servicios en `X-User-Id` y `X-User-Roles`. Usuarios solo firma.
 
 Hasta el 26/10 existía `GET /auth/verificar` para que el gateway le preguntara a Usuarios con
-`auth_request`. Se borró porque nadie lo usaba (ver `docs/arquitectura.md`, «Autenticación»).
+`auth_request`. Se borró porque nadie lo usaba.
 
 `/metrics` es para Prometheus, que lo pide directo por la red de Docker. Lo que llega por el gateway
 trae `X-Forwarded-For` y recibe `404`, así las métricas no quedan a la vista de cualquier usuario
