@@ -59,6 +59,3 @@ flowchart LR
 | `infra/` | RabbitMQ, Prometheus, Grafana, Loki y claves |
 | `scripts/` | Datos de demo, demo de concurrencia y prueba con réplicas |
 
-## Documentación
-
-- [`docs/contratos.md`](docs/contratos.md): endpoints, eventos y esquema GraphQL.

@@ -1,6 +1,6 @@
 # Servicio de Cocheras
 
-Alta, edición y baja de cocheras, disponibilidad semanal y búsqueda por radio. Contrato en `docs/contratos.md` §6.
+Alta, edición y baja de cocheras, disponibilidad semanal y búsqueda por radio.
 
 - Stack: Node.js 24 (ESM), Express 5 + Apollo Server 5, PostgreSQL + PostGIS (`pg`), DataLoader, RabbitMQ (`amqplib`), Redis (`redis`).
 - Responsable: Diego Marin.
