@@ -1,7 +1,4 @@
 # Introducción
-
-> Borrador para el documento final. Está escrito con lo que el sistema hace hoy; conviene que lo lean los cuatro y ajusten el tono.
-
 ## La idea
 
 parkIN es una plataforma distribuida de alquiler de cocheras por franja horaria. Los propietarios publican las cocheras que no usan, y los conductores las buscan en un mapa, las reservan por horas y las pagan, con confirmación en tiempo real para las dos partes.
